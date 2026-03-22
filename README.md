@@ -1,143 +1,236 @@
-# CrowdTest — AI Synthetic User Testing Skill
+# 🧪 CrowdTest
 
-> 用海量 AI 仿真用户测试你的软件产品。每个用户有独特的身份、性格、需求和技术背景。他们会像真人一样使用你的产品，然后给出真实的反馈。
+> AI-powered synthetic user testing. One command. Zero users needed.
 
-## 核心理念
-
-传统 QA 测试问"功能是否工作"。CrowdTest 问"**用户是否愿意付费**"。
-
-受 MiroFish（AI swarm intelligence）和 Synthetic Users 启发，CrowdTest 生成 N 个具有完全不同背景和需求的虚拟用户，让他们各自独立地使用你的产品，然后汇总他们的反馈。
-
-**为什么有效：**
-- 1 个 QA tester 的视角有限 → 100 个不同 persona 的用户覆盖更多边界情况
-- AI 模型（Claude/GPT）足够聪明来真正理解"好产品"和"垃圾"的区别
-- 关键是 prompt engineering — 让 AI 真正"成为"那个用户，而不是"扮演"
-
-## 架构
-
-```
-┌─────────────────────────────────────────┐
-│           CrowdTest Orchestrator         │
-│                                          │
-│  1. 读取产品 URL + 产品描述              │
-│  2. 生成 N 个 Persona（用户画像）        │
-│  3. 对每个 Persona 启动一个 Session      │
-│  4. 每个 Session 独立使用产品            │
-│  5. 收集所有反馈                         │
-│  6. AI 汇总分析 → 输出报告              │
-└─────────────────────────────────────────┘
-
-每个 Persona Session:
-┌──────────────────────────┐
-│  Persona: "Alex, 32岁     │
-│  swing trader, $150K"     │
-│                           │
-│  1. 打开产品 URL          │
-│  2. 按自己的需求探索      │
-│  3. 记录体验（好/差）     │
-│  4. 写反馈               │
-│  5. 打分 (NPS 1-10)      │
-└──────────────────────────┘
+```bash
+crowdtest https://myapp.com
 ```
 
-## Persona 生成策略
+10 AI personas browse your product → find UX issues you can't see → deliver a prioritized report.
 
-不是随机生成。而是有策略地覆盖用户光谱：
+---
 
-### 维度矩阵
+## Why CrowdTest?
 
-| 维度 | 选项 |
-|------|------|
-| **技术水平** | 小白 / 普通用户 / 技术人员 / 开发者 |
-| **使用场景** | 工作 / 个人 / 学习 / 娱乐 |
-| **性格** | 耐心型 / 急躁型 / 细节控 / 快速扫描型 |
-| **设备** | 手机 / 平板 / 桌面 / 多设备 |
-| **付费意愿** | 不想付费 / 价格敏感 / 愿意付费如果值得 / 不在乎价格 |
-| **竞品经验** | 从未用过类似产品 / 用过免费替代品 / 在用竞品 / 前竞品用户 |
-| **情绪状态** | 好奇探索 / 带着问题来 / 被推荐来试试 / 正在对比多个产品 |
+You just rebuilt your onboarding flow. It's 11pm. You need fresh eyes but have nobody to ask.
 
-### 领域特定维度
+| Alternative | Cost | Speed | CrowdTest |
+|------------|------|-------|-----------|
+| 5 friends | Free (+ social debt) | Days | **Instant, diverse, private** |
+| UserTesting.com | $245 (5 users) | Hours | **~$1, minutes** |
+| Hotjar/FullStory | Free tier | Needs traffic | **Works with zero users** |
+| UX consultant | $150-300/hr | Days to book | **Instant sanity check** |
 
-对于 Event Radar 这类金融产品：
+**CrowdTest is not a replacement for real user testing.** It's the only option when you have no users, no budget, and no time. Think of it as a fast, cheap UX sanity check — 60-70% of real user feedback quality at 1% of the cost.
 
-| 维度 | 选项 |
-|------|------|
-| **交易经验** | 新手 / 1-3年 / 3-10年 / 10+年 |
-| **交易风格** | Day trade / Swing / 长期投资 / 期权 |
-| **账户规模** | <$10K / $10-50K / $50-200K / $200K+ |
-| **信息获取** | Twitter/X / Discord / Bloomberg / 新闻网站 |
-| **痛点** | 信息太慢 / 信息太多 / 不知道信什么 / 错过重大事件 |
+---
 
-## 输出
+## How It Works
 
-### 个体反馈（每个 Persona 各一份）
-```markdown
-## Persona: Sarah Chen
-**背景:** 28岁, 数据分析师, 业余炒股2年, $30K账户, 之前用TradingView
-**使用时长:** 12分钟
-**NPS:** 6/10
-
-### 第一印象 (0-30秒)
-"界面看起来很专业，但我不知道这跟 TradingView 有什么区别..."
-
-### 使用过程
-1. 打开 feed → 看到一堆事件 → 不知道哪些跟我有关
-2. 点进 NVDA → 看到财报信息 → 有用！
-3. 搜索 "earnings" → 找到了即将到来的财报 → 这个功能我喜欢
-4. 设置通知 → 被 Permission Denied 卡住 → 放弃
-
-### 关键发现
-- ✅ 财报数据很有用
-- ❌ 不知道 "Smart Feed" 是什么意思
-- ❌ 没有股价图表让我觉得不完整
+```
+┌──────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────┐     ┌────────┐
+│  Scout   │ ──► │  Persona     │ ──► │  Browser     │ ──► │ Feedback │ ──► │ Report │
+│  (check  │     │  Generator   │     │  Sessions    │     │ Aggreg.  │     │        │
+│   page)  │     │  (N users)   │     │  (per user)  │     │ (dedup)  │     │        │
+└──────────┘     └──────────────┘     └─────────────┘     └──────────┘     └────────┘
 ```
 
-### 汇总报告
-```markdown
-## CrowdTest Report — Event Radar
-**测试用户数:** 20
-**平均 NPS:** 5.8/10
-**愿意付费比例:** 35%
+1. **Scout** checks your page loads correctly, detects auth walls and CAPTCHAs
+2. **Persona Generator** creates N diverse users (tech novice → developer, ages 18-65, different goals)
+3. **Browser Sessions** — each persona browses your product using Playwright, logging every action
+4. **Feedback** — each persona reviews their action log and writes grounded, specific feedback
+5. **Report** — issues deduplicated across personas, ranked by severity and consensus
 
-### 共识发现（多数用户提到）
-1. 🔴 [18/20] 缺少股价数据
-2. 🔴 [15/20] 信噪比需要改善
-3. 🟢 [16/20] AI 分析功能独特且有价值
+### What makes the feedback useful?
 
-### 用户分群洞察
-- **新手 (5人):** 觉得太复杂，看不懂 Scorecard
-- **经验交易员 (5人):** 觉得缺少价格数据是致命伤
-- **信息密集型 (5人):** 喜欢多源聚合，但希望能自定义过滤
-- **移动端用户 (5人):** 体验OK但缺少推送通知
+Every piece of feedback is **grounded in action logs** — not opinions pulled from thin air:
+
+```
+❌ "The UI could be improved" (generic slop)
+✅ "When I clicked 'Add to Cart', the button didn't change to confirm
+    the action. I clicked 3 times thinking it was broken. Cart now
+    shows 3 items." (grounded in action log step 7-8)
 ```
 
-## 技术实现
+---
 
-### 作为 OpenClaw Skill
-- 输入：产品 URL + 产品描述 + 目标用户画像维度
-- 使用 `browser` tool 让每个 persona 真正浏览产品
-- 使用 `sessions_spawn` 并行跑多个 persona
-- 最后汇总所有反馈
+## Example Output
 
-### 作为 Claude Code Skill
-- 使用 gstack `/browse` 进行浏览器操作
-- 串行跑每个 persona（受限于单 session）
-- 或使用 `/codex` 并行
+```
+╔══════════════════════════════════════════════════╗
+║  CrowdTest Report — myapp.com                    ║
+║  10 personas · 89 pages visited · 18 issues      ║
+║  Avg NPS: 5.8  ·  Would pay: 35%                ║
+╠══════════════════════════════════════════════════╣
+║                                                  ║
+║  🔴 CRITICAL (2)                                  ║
+║  ┌─────────────────────────────────────────────┐ ║
+║  │ Signup form rejects valid .co email TLDs    │ ║
+║  │ 7/10 personas affected · Evidence: steps    │ ║
+║  │ 12-14 across 7 sessions                     │ ║
+║  └─────────────────────────────────────────────┘ ║
+║  ┌─────────────────────────────────────────────┐ ║
+║  │ "Start Free" button leads to payment page   │ ║
+║  │ 6/10 personas felt misled                   │ ║
+║  └─────────────────────────────────────────────┘ ║
+║                                                  ║
+║  🟡 HIGH (4)  ·  🟠 MEDIUM (6)  ·  🟢 LOW (6)    ║
+║                                                  ║
+║  📊 Segment Insights                              ║
+║  • Novice users: couldn't find pricing page     ║
+║  • Mobile users: CTA hidden below fold          ║
+║  • Power users: wanted keyboard shortcuts       ║
+╚══════════════════════════════════════════════════╝
+```
 
-## 与现有方案的区别
+---
 
-| 方案 | 做什么 | 不做什么 |
-|------|--------|---------|
-| **gstack /qa** | 功能测试 + bug 找 | 不模拟真实用户心理 |
-| **Synthetic Users** | 问卷/访谈仿真 | 不操作真实产品 |
-| **MiroFish** | 群体行为预测 | 不针对 UX 测评 |
-| **CrowdTest** | **真实产品操作 + 多 persona 反馈 + 群体洞察** | — |
+## Installation
+
+CrowdTest follows the [Agent Skills](https://agentskills.io) open standard — works with **15+ AI tools** out of the box.
+
+### One-line install (any supported agent)
+
+```bash
+npx skills add kaikezhang/crowd-test
+```
+
+Works with: Claude Code, Cursor, Gemini CLI, VS Code Copilot, OpenCode, Goose, Amp, Junie, and more.
+
+### OpenClaw Skill
+
+```bash
+clawhub install crowd-test
+```
+
+### Requirements
+
+- Any AI coding agent with [Playwright MCP](https://playwright.dev/docs/test-agents) support
+- Anthropic API key (Claude Sonnet 4.6+)
+
+---
+
+## Usage
+
+### Basic (zero config)
+
+```bash
+crowdtest https://myapp.com
+```
+
+### With options
+
+```bash
+crowdtest https://myapp.com \
+  --personas 20 \
+  --model opus \
+  --audience "e-commerce shoppers" \
+  --output report.md
+```
+
+### Testing auth-protected sites
+
+```bash
+# Export cookies from your browser
+crowdtest https://app.mysite.com --storage-state cookies.json
+```
+
+---
+
+## Persona System
+
+CrowdTest doesn't generate random users. It builds a **dimension matrix** to ensure coverage:
+
+| Dimension | Values |
+|-----------|--------|
+| Tech level | Novice → Developer |
+| Purpose | Inferred from your product |
+| Age | 18-65+ |
+| Patience | Low → High |
+| Exploration | Focused → Curious |
+| Device | Desktop / Mobile / Tablet |
+
+Each persona gets **behavioral rules** — not personality adjectives:
+
+```
+✅ "After 3 failed attempts, express frustration and try search"
+✅ "Skip text sections longer than 3 lines"
+✅ "Only use visible buttons and links (no keyboard shortcuts)"
+
+❌ "You are impatient" (LLMs can't act dumb on command)
+```
+
+---
+
+## Limitations (Honest)
+
+| What CrowdTest Can't Do | Why |
+|-------------------------|-----|
+| Replace real user testing | LLMs are rational actors, real users aren't |
+| Evaluate visual design | Sees DOM structure, not colors/layout/whitespace |
+| Test behind CAPTCHAs | No bypass capability |
+| Simulate accessibility | Can't run a screen reader |
+| Test performance/speed | Reports slow loads but can't measure Core Web Vitals |
+| Handle complex SPAs reliably | 50-70% success on SPAs vs 90%+ on static sites |
+
+**Position it right**: CrowdTest produces "AI-generated hypotheses about UX issues," not "synthetic user research."
+
+---
+
+## Cost
+
+| Personas | Model | Cost | Time |
+|----------|-------|------|------|
+| 5 | Sonnet | ~$0.30 | ~5 min |
+| 10 | Sonnet | ~$0.60 | ~10 min |
+| 20 | Sonnet | ~$1.20 | ~20 min |
+| 10 | Opus | ~$3.00 | ~10 min |
+
+For reference: UserTesting.com charges $49 per real human tester.
+
+---
+
+## Architecture
+
+See `docs/` for detailed documentation:
+
+- [`docs/PRD.md`](docs/PRD.md) — Product requirements
+- [`docs/technical-design.md`](docs/technical-design.md) — Architecture & data structures
+- [`docs/competitive-research.md`](docs/competitive-research.md) — Competitive analysis
+- [`docs/ceo-review.md`](docs/ceo-review.md) — Product strategy review
+- [`docs/eng-review.md`](docs/eng-review.md) — Engineering feasibility
+- [`docs/roadmap.md`](docs/roadmap.md) — Version milestones
+- [`docs/sprint-plan.md`](docs/sprint-plan.md) — Sprint breakdown
+
+---
 
 ## Roadmap
 
-- [ ] v0.1: 单 persona 测试（Alex 模式，已在 Event Radar 验证）
-- [ ] v0.2: Persona 生成器（从维度矩阵自动生成 N 个 persona）
-- [ ] v0.3: 并行测试 + 反馈汇总
-- [ ] v0.4: OpenClaw Skill 打包
-- [ ] v0.5: 支持任意 Web 产品（不限于 Event Radar）
-- [ ] v1.0: ClawHub 发布
+- [x] v0.1 — Single persona proof of concept
+- [ ] v0.2 — Scout + Persona Generator + Single-persona loop
+- [ ] v0.3 — Multi-persona + Aggregation + Report
+- [ ] v0.4 — Skill packaging + Self-validation
+- [ ] v1.0 — Public release
+
+---
+
+## Contributing
+
+CrowdTest is open source. PRs welcome.
+
+```bash
+git clone https://github.com/kaikezhang/crowd-test.git
+cd crowd-test
+# Read CLAUDE.md (for Claude Code) or AGENTS.md (for Codex)
+# Check TASK.md for current sprint
+```
+
+---
+
+## License
+
+MIT
+
+---
+
+*Built by [Kaike](https://github.com/kaikezhang) & [晚晚](https://github.com/kaikezhang/crowd-test). Ship fast, test faster.* 🧪
