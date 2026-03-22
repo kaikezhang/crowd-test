@@ -1,209 +1,201 @@
-# CrowdTest — Sprint Plan
+# CrowdTest — Sprint Plan (v2 Aligned)
 
 > Updated: 2026-03-22
-> Scope: v0.2 → v0.4 detailed task breakdown
+> Scope: Smart v1 (v2 Phase 0-8 pipeline, SKILL.md-only product)
+> Canonical vision: `docs/product-design-v2.md`
+
+**核心原则**: CrowdTest 是一个 **SKILL.md prompt**，不是应用代码。所有开发都是写/优化 SKILL.md 的 orchestration prompt。
 
 ---
 
-## Sprint 1: Scout + Persona Generator (P0)
+## Sprint 1: Scout + Product Analysis (3 天)
 
-**Duration**: 2-3 days
-**Goal**: 能自动检测页面状态 + 生成多样化 persona
+**Goal**: LLM 能自动理解一个网站是什么、做什么、给谁用
 
-### Task 1.1: Scout — Page Readiness
-
-| Task | Priority | Est. | Description |
-|------|----------|------|-------------|
-| 1.1.1 | P0 | 2h | 基础导航: `browser_navigate` + `browser_wait_for(networkIdle)` + `browser_snapshot` |
-| 1.1.2 | P0 | 1h | 健康检查: 计算 interactive elements, 阈值 < 5 → retry |
-| 1.1.3 | P0 | 2h | Auth 检测: 在 snapshot 中搜索 sign in/log in 模式 |
-| 1.1.4 | P0 | 1h | CAPTCHA 检测: 搜索 captcha/recaptcha/hcaptcha 模式 |
-| 1.1.5 | P0 | 2h | Cookie banner 处理: 检测 + 自动点击 Accept/Close |
-| 1.1.6 | P1 | 2h | 多页探索: 跟踪 top-level nav links, 快速 snapshot 前 3-5 页 |
-| 1.1.7 | P1 | 1h | SiteMap 输出: 组装 JSON, 验证 schema |
-
-**Acceptance**: Scout 在 3 个不同站点上正确判断 ready/auth/captcha
-
-### Task 1.2: Persona Generator
+### Task 1.1: Scout (Phase 1)
 
 | Task | Priority | Est. | Description |
 |------|----------|------|-------------|
-| 1.2.1 | P0 | 2h | 产品分析: 从 SiteMap 推断产品类型、目标用户、核心功能 |
-| 1.2.2 | P0 | 3h | 维度矩阵: 定义 tech_level × purpose × age × personality × device 采样策略 |
-| 1.2.3 | P0 | 3h | 单 persona 生成: LLM prompt → Persona JSON, 包含 behavioral_rules |
-| 1.2.4 | P0 | 2h | 累积多样性: 每次生成把已有 persona 摘要放入 prompt |
-| 1.2.5 | P1 | 1h | 多样性验证: 确保无两个 persona 共享 (tech_level, purpose, device) |
-| 1.2.6 | P1 | 1h | 批量生成: 循环 N 次, 输出 Persona[] JSON array |
+| 1.1.1 | P0 | 2h | SKILL.md Phase 1 prompt: 导航 URL + wait + snapshot |
+| 1.1.2 | P0 | 1h | 健康检查 prompt: 计数 interactive elements, < 5 → retry |
+| 1.1.3 | P0 | 1h | Auth/CAPTCHA/Cookie 检测 prompt + 处理指令 |
+| 1.1.4 | P0 | 2h | 多页探索 prompt: top-level nav → 快速 snapshot 3-5 页 |
+| 1.1.5 | P1 | 1h | Critical path 识别: 找到核心功能的页面路径 |
+| 1.1.6 | P0 | 1h | SiteMap JSON schema + 输出示例 |
 
-**Acceptance**: 生成 10 个 persona, 均有 ≥3 条 IF-THEN 行为规则, 覆盖 ≥3 tech_level + ≥3 age range
+### Task 1.2: Product Analysis (Phase 0)
+
+| Task | Priority | Est. | Description |
+|------|----------|------|-------------|
+| 1.2.1 | P0 | 2h | SKILL.md Phase 0 prompt: 从 snapshot 分析产品 |
+| 1.2.2 | P0 | 1h | ProductProfile JSON schema (category, core_tasks, competitors, audience) |
+| 1.2.3 | P0 | 1h | User context 合并 (--context, --focus, --competitors flags) |
+| 1.2.4 | P1 | 1h | 边界情况: 空白站、纯内容站、需要登录的产品 |
+
+**Acceptance**:
+- SKILL.md Phase 0+1 完整可跟随
+- 在 cal.com / linear.app / Event Radar 上人工验证 ProductProfile 质量
+- SiteMap 含 ≥3 pages + critical_path
 
 ### Sprint 1 交付物
-
-- Scout prompt module (可独立运行)
-- Persona Generator prompt module (可独立运行)
-- 示例输出 JSON (SiteMap + 10 Personas)
+- SKILL.md 更新: Phase 0 + Phase 1 完整
+- Phase 2-8 保留为 stub
 - PR (不 merge)
 
 ---
 
-## Sprint 2: Single Persona Browser Loop (P0)
+## Sprint 2: Persona Gen + Task Assignment + Browser Loop (4 天)
 
-**Duration**: 3-4 days
-**Goal**: 一个 persona 能完整走完 浏览 → 反馈 流程
-**Dependency**: Sprint 1 (需要 SiteMap + Persona)
+**Goal**: 一个 persona 能带着具体任务浏览产品并产出 grounded 反馈
 
-### Task 2.1: Browser Session Core
+### Task 2.1: Persona Generation (Phase 2)
 
 | Task | Priority | Est. | Description |
 |------|----------|------|-------------|
-| 2.1.1 | P0 | 2h | INIT: 设置 browser context (device, viewport, locale) |
-| 2.1.2 | P0 | 2h | NAVIGATE: 打开 URL + 等待 + cookie banner 处理 (复用 Scout) |
-| 2.1.3 | P0 | 3h | ORIENT: snapshot 当前页, 基于 persona purpose 规划下一步 |
-| 2.1.4 | P0 | 3h | ACT: 执行 click/type/scroll, 等 500ms, 重新 snapshot |
-| 2.1.5 | P0 | 2h | OBSERVE: 对比前后 snapshot, 判断 action 是否生效 |
-| 2.1.6 | P1 | 2h | RECOVER: action 失败 → 尝试替代方式 (scroll, parent element) |
-| 2.1.7 | P0 | 2h | DECIDE: 继续/停止 逻辑 (goal met / stuck / limit hit) |
-| 2.1.8 | P0 | 1h | ActionLog: 记录每步 (action, target, snapshots, success, notes) |
+| 2.1.1 | P0 | 3h | SKILL.md Phase 2 prompt: 从 ProductProfile 推导 5 种 archetype |
+| 2.1.2 | P0 | 2h | 每个 archetype 生成 2 个 persona (共 10) |
+| 2.1.3 | P0 | 2h | 行为规则生成: IF-THEN 格式, ≥3 条/persona |
+| 2.1.4 | P0 | 1h | 累积多样性: 已有 persona 摘要放入 prompt |
+| 2.1.5 | P1 | 1h | Entry point 多样化: 不是所有人都从首页进入 |
 
-### Task 2.2: Circuit Breakers
+### Task 2.2: Task Assignment (Phase 3)
 
 | Task | Priority | Est. | Description |
 |------|----------|------|-------------|
-| 2.2.1 | P0 | 1h | Max 20 actions per session |
-| 2.2.2 | P0 | 1h | Max 3 minutes per session |
-| 2.2.3 | P1 | 1h | Max 5 consecutive failures → force stop |
+| 2.2.1 | P0 | 2h | SKILL.md Phase 3 prompt: 基于 persona + ProductProfile 分配具体任务 |
+| 2.2.2 | P0 | 1h | 成功标准定义: 每个任务的 COMPLETED/FAILED 判断条件 |
 
-### Task 2.3: Feedback Writer
+### Task 2.3: Browser Session (Phase 4)
 
 | Task | Priority | Est. | Description |
 |------|----------|------|-------------|
-| 2.3.1 | P0 | 3h | Phase 2: LLM 回顾 action log, 写 grounded 反馈 |
-| 2.3.2 | P0 | 2h | Phase 3: 结构化提取 → PersonaFeedback JSON |
-| 2.3.3 | P1 | 1h | Evidence linking: 每个 issue 必须引用 action log step |
-| 2.3.4 | P1 | 2h | Canary check: LLM 自验证 "specific or generic?" |
-| 2.3.5 | P1 | 1h | Generic feedback retry: 最多 1 次 regeneration |
+| 2.3.1 | P0 | 3h | SKILL.md Phase 4 prompt: ORIENT → ACT → OBSERVE → DECIDE loop |
+| 2.3.2 | P0 | 2h | Action prompt: persona narrative + snapshot + task progress + emotional state |
+| 2.3.3 | P0 | 1h | Circuit breakers: 20 actions, 3 min, 5 consecutive failures |
+| 2.3.4 | P1 | 1h | 情绪追踪: 每步一个 emotional_state (confident/neutral/confused/frustrated) |
 
-**Acceptance**: 单 persona 在 Event Radar 上完整跑通, 产出 grounded feedback with evidence
+### Task 2.4: Feedback Synthesis (Phase 6)
+
+| Task | Priority | Est. | Description |
+|------|----------|------|-------------|
+| 2.4.1 | P0 | 2h | SKILL.md Phase 6 prompt: 回顾 action log, 写 grounded 反馈 |
+| 2.4.2 | P0 | 1h | Task completion 记录: COMPLETED/FAILED + steps + time |
+| 2.4.3 | P0 | 1h | Evidence linking: 每个 issue 必须引用 action log step |
+| 2.4.4 | P1 | 1h | Canary check: "Is this specific or generic?" |
+
+**Acceptance**:
+- 单 persona 在 Event Radar 上完整跑通
+- 产出 grounded feedback with task completion status
+- 每个 issue 有 evidence 指向具体 action step
 
 ### Sprint 2 交付物
-
-- Browser session state machine (完整 ORIENT → ACT → OBSERVE → DECIDE loop)
-- Action logging 系统
-- Feedback writer (three-phase)
-- Canary self-validation
-- End-to-end 单 persona demo
+- SKILL.md 更新: Phase 2 + 3 + 4 + 6 完整
+- End-to-end 单 persona demo 可运行
 - PR (不 merge)
 
 ---
 
-## Sprint 3: Multi-Persona + Aggregation (P1)
+## Sprint 3: Multi-Persona + Aggregation + Score + Report (3 天)
 
-**Duration**: 3-4 days
-**Goal**: N 个 persona 串行运行, 产出去重聚合报告
-**Dependency**: Sprint 2
+**Goal**: 10 personas 串行运行 → Product Score + 去重报告 + "Fix ONE Thing"
 
-### Task 3.1: Multi-Persona Execution
+### Task 3.1: Multi-Persona Runner
 
 | Task | Priority | Est. | Description |
 |------|----------|------|-------------|
-| 3.1.1 | P0 | 2h | Sequential runner: for each persona → run browser session |
-| 3.1.2 | P0 | 2h | Cumulative diversity: 传递 "already covered issues" 给后续 persona |
-| 3.1.3 | P1 | 2h | Progress reporting: 每个 persona 完成后输出进度 |
+| 3.1.1 | P0 | 2h | SKILL.md 串行执行 prompt: for each persona, run Phase 4→6 |
+| 3.1.2 | P0 | 1h | 累积多样性: "already covered issues" 传递给下一个 persona |
+| 3.1.3 | P1 | 1h | 进度输出: persona N/total + status emoji |
 | 3.1.4 | P1 | 1h | 错误隔离: 单个 persona 失败不影响其他 |
 
-### Task 3.2: Aggregator
+### Task 3.2: Journey Reconstruction (Phase 5 — 简化版)
 
 | Task | Priority | Est. | Description |
 |------|----------|------|-------------|
-| 3.2.1 | P0 | 3h | Issue 去重: LLM 语义合并相同问题 |
-| 3.2.2 | P0 | 2h | Severity 计算: base_severity × (1 + log2(affected_count)) |
-| 3.2.3 | P0 | 2h | Consensus 检测: >50% persona 提到 = consensus issue |
-| 3.2.4 | P1 | 2h | 跨维度分析: 按 tech_level / device / purpose 分组洞察 |
-| 3.2.5 | P1 | 1h | Positives aggregation: 共识优点 |
+| 3.2.1 | P1 | 2h | SKILL.md Phase 5 prompt: 从 action log + emotional states → 关键时刻提取 |
+| 3.2.2 | P1 | 1h | 信心曲线: emotional_state → 数值映射 |
 
-### Task 3.3: Report Generation
+### Task 3.3: Aggregation + Scoring (Phase 7)
 
 | Task | Priority | Est. | Description |
 |------|----------|------|-------------|
-| 3.3.1 | P0 | 3h | Markdown report: 完整模板 (header, critical/high/medium/low, segments) |
-| 3.3.2 | P1 | 2h | 终端 summary: 精简版 (issue count + top 3 critical) |
-| 3.3.3 | P2 | 4h | HTML report: standalone 交互式页面 (drill-down) |
+| 3.3.1 | P0 | 2h | Issue 去重: LLM 语义合并 |
+| 3.3.2 | P0 | 2h | **Product Score**: 6 维度加权计算 |
+| 3.3.3 | P0 | 1h | **"Fix ONE Thing"**: 最高影响单一推荐 |
+| 3.3.4 | P0 | 1h | **Task Completion Rate**: X/N personas 完成核心任务 |
+| 3.3.5 | P1 | 1h | Segment analysis: by tech_level / device / archetype |
+
+### Task 3.4: Report Generation
+
+| Task | Priority | Est. | Description |
+|------|----------|------|-------------|
+| 3.4.1 | P0 | 3h | Markdown report: Scorecard + Fix One Thing + Issues + Journeys |
+| 3.4.2 | P1 | 1h | 终端 summary: score + task completion + top 3 issues |
+
+**Acceptance**:
+- 10 personas 在真实站点上完整运行
+- 产出 Product Score (X/10)
+- 报告包含 "Fix ONE Thing" 推荐
+- Task Completion Rate 显示在报告头部
 
 ### Sprint 3 交付物
-
-- Multi-persona runner
-- Aggregator (dedup + severity + consensus)
-- Markdown report
-- End-to-end: 10 personas on real site → report
+- SKILL.md 完整 8 阶段
+- End-to-end: 10 personas → 完整报告
 - PR (不 merge)
 
 ---
 
-## Sprint 4: Packaging + Validation (P2)
+## Sprint 4: Polish + Validation + Publish (2 天)
 
-**Duration**: 2-3 days
-**Goal**: 打包成可发布的 Skill, 有质量保证
+**Goal**: 可发布状态
 
-### Task 4.1: SKILL.md
-
-| Task | Priority | Est. | Description |
-|------|----------|------|-------------|
-| 4.1.1 | P0 | 4h | 主 SKILL.md: 完整的 orchestration prompt |
-| 4.1.2 | P0 | 2h | 依赖检查: Playwright MCP 可用性验证 |
-| 4.1.3 | P0 | 1h | 配置选项: persona_count, model, verbose |
-| 4.1.4 | P1 | 2h | 错误信息: 所有失败场景的 user-friendly 提示 |
-
-### Task 4.2: Test Fixtures
+### Task 4.1: 质量验证
 
 | Task | Priority | Est. | Description |
 |------|----------|------|-------------|
-| 4.2.1 | P0 | 3h | Fixture 1: TodoMVC with 4 planted bugs |
-| 4.2.2 | P0 | 3h | Fixture 2: Signup flow with 3 UX issues |
-| 4.2.3 | P1 | 2h | Fixture 3: E-commerce with pricing confusion |
-| 4.2.4 | P1 | 2h | 验证脚本: 自动运行 + 检查发现率 |
+| 4.1.1 | P0 | 3h | 在 3 个不同站点跑完整测试 (SaaS + e-commerce + content) |
+| 4.1.2 | P0 | 2h | 反馈质量评估: 特异性 ≥80%, 已知问题发现率 ≥75% |
+| 4.1.3 | P1 | 1h | 成本验证: 确认 10 personas < $1.50 |
 
-### Task 4.3: README + Documentation
+### Task 4.2: 文档 + 打包
 
 | Task | Priority | Est. | Description |
 |------|----------|------|-------------|
-| 4.3.1 | P0 | 2h | README.md: 安装 + Quick Start + 示例输出 |
-| 4.3.2 | P1 | 1h | 限制说明: 站点兼容性表 + 诚实定位 |
-| 4.3.3 | P2 | 2h | Demo GIF/视频 录制 |
+| 4.2.1 | P0 | 2h | README.md 最终版: 含真实示例输出 |
+| 4.2.2 | P0 | 1h | SKILL.md 最终 polish |
+| 4.2.3 | P1 | 1h | ClawHub 发布准备 |
 
 ### Sprint 4 交付物
-
-- SKILL.md (完整 skill 定义)
-- 3 个 test fixtures
-- 验证结果: ≥75% 发现率
-- 升级版 README.md
-- PR (不 merge)
+- 验证通过的 SKILL.md
+- 3 个真实站点的测试报告
+- README.md 含示例
+- ClawHub 发布就绪
 
 ---
 
-## Sprint 跨度总结
+## 总览
 
 ```
-Sprint 1 (2-3d) ──► Sprint 2 (3-4d) ──► Sprint 3 (3-4d) ──► Sprint 4 (2-3d)
-   Scout              Browser Loop         Multi-Persona        Packaging
-   Persona Gen        Feedback Writer      Aggregation          Validation
-                                           Report               SKILL.md
+Sprint 1 (3d) ──► Sprint 2 (4d) ──► Sprint 3 (3d) ──► Sprint 4 (2d)
+   Scout              Persona Gen        Multi-Persona       Validation
+   Product Analysis   Task Assignment    Aggregation         Polish
+                      Browser Loop       Product Score       Publish
+                      Feedback           Report
 ```
 
-**Total**: ~11-14 天到 v0.4 (可发布状态)
+**Total**: ~12 天到可发布
 
----
-
-## Agent 分配建议
+## Agent 分配
 
 | Sprint | 推荐 Agent | 原因 |
 |--------|-----------|------|
-| 1 (Scout + Persona) | Codex | 明确 spec, 直接实现 |
-| 2 (Browser Loop) | CC | 复杂状态机, 需要架构判断 |
-| 3 (Aggregation) | Codex + CC | Codex 做 runner/report, CC 做 aggregation 逻辑 |
-| 4 (Packaging) | CC | SKILL.md 需要精心设计 prompt |
+| 1 (Scout + Analysis) | **CC** | Prompt 设计需要精心措辞 |
+| 2 (Persona + Browser) | **CC** | 复杂 prompt 链，需要架构判断 |
+| 3 (Aggregation + Score) | **CC** | 评分体系设计 |
+| 4 (Validation) | **晚晚手动** | 需要在真实站点上 human-in-the-loop 验证 |
 
-**交叉 Review**: 每个 Sprint 的 PR 由另一个 agent review
+> 这个项目是 prompt engineering，不是 coding。CC 比 Codex 更适合。
 
 ---
 
-*每个 Sprint 结束时，在真实站点上 demo。如果反馈质量不达标，停下来修而不是继续加功能。*
+*每个 Sprint 在真实站点上 demo。反馈质量不达标就停下来修 prompt，不继续加功能。*
