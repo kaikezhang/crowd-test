@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "crowd-test": {
+      "source": "kaikezhang/crowd-test",
+      "sourceType": "github",
+      "computedHash": "b397df93407fc2f1a8ceb89e4dc1b2405eb7162e71ffeda59fcaf9a40d20bd4d"
+    }
+  }
+}
