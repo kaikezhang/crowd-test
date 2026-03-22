@@ -1,362 +1,350 @@
-# TASK.md — Sprint 2: Persona Generation + Task Assignment + Browser Loop + Feedback
+# TASK.md — Sprint 3: Multi-Persona + Journey Recon + Aggregation + Score + Report
 
 > ⚠️ DO NOT MERGE. Create PR and stop. 晚晚 reviews and merges.
 
 ## Sprint Goal
 
-Implement Phases 2, 3, 4, and 6 in SKILL.md — the complete single-persona pipeline from "who would use this?" to "here's what they found."
+Complete the SKILL.md pipeline by implementing:
+1. **Multi-persona orchestration** — how to run N personas sequentially
+2. **Phase 5: Journey Reconstruction** — turn action logs into narratives
+3. **Phase 7: Aggregation + Scoring** — Product Score, "Fix ONE Thing", issue dedup
+4. **Phase 8: Delta Analysis** — compare with previous run
 
-After this sprint, a single persona can:
-1. Be generated from the product profile
-2. Get assigned a specific measurable task
-3. Browse the product with emotional tracking
-4. Produce grounded, evidence-linked feedback
+After this sprint, `crowd-test` is feature-complete. One URL in → full report out.
 
 ## Context
 
-- **Sprint 1 is done**: SKILL.md has complete Phase 0 (Product Analysis) and Phase 1 (Scout)
-- Read `docs/product-design-v2.md` for the canonical design vision (especially sections 3, 4, 7, 8)
-- Phase 2-8 already have stubs in SKILL.md — replace the stubs with full implementations
-- **This is prompt writing, not code.** SKILL.md is instructions for an LLM to follow.
+- **Sprint 1 done**: Phase 0 (Product Analysis) + Phase 1 (Scout) ✅
+- **Sprint 2 done**: Phase 2 (Persona Gen) + Phase 3 (Tasks) + Phase 4 (Browser) + Phase 6 (Feedback) ✅
+- **SKILL.md is 1274 lines** — only Phase 5, 7, 8 remain as stubs
+- Read `docs/product-design-v2.md` sections 5, 7, 8 for design vision
 
 ## What You're Building
 
-Replace the Phase 2, 3, 4, and 6 stubs in SKILL.md with complete, detailed, step-by-step instructions.
+Replace the Phase 5, 7, 8 stubs in SKILL.md with full implementations. Also add a **Multi-Persona Orchestration** section between Phase 4 and Phase 5 (or as a wrapper around Phases 4-6).
 
 ---
 
-### Phase 2: Persona Generation
+### Multi-Persona Orchestration
 
-**Input**: ProductProfile + SiteMap
-**Output**: PersonaSet (array of Persona JSON)
-
-**Key design from product-design-v2.md**: Personas are DERIVED from the product, not randomly combined from a dimension matrix.
+Add instructions for running N personas sequentially. This wraps Phases 4→5→6 in a loop.
 
 **Instructions to write**:
 
-1. Analyze ProductProfile to identify 5 persona **archetypes** relevant to THIS product:
-   - **The First-Timer**: Never used this type of product. Tests onboarding clarity, time-to-value.
-   - **The Switcher**: Coming from a competitor (use ProductProfile.competitors). Tests feature parity, migration friction.
-   - **The Power User**: Experienced with this product category. Tests efficiency, shortcuts, advanced features.
-   - **The Skeptic**: Doesn't trust new tools easily. Tests trust signals, security, social proof, cancellation policy.
-   - **The Edge Case**: Unusual context — mobile-only, international, accessibility needs, rushed. Tests robustness.
+1. After Phase 3 produces the PersonaTaskMatrix, process each persona one at a time:
+   ```
+   For persona 1..N:
+     a. Run Phase 4 (Browser Session) for this persona
+     b. Run Phase 5 (Journey Reconstruction) for this persona
+     c. Run Phase 6 (Feedback Synthesis) for this persona
+     d. Report progress: "✅ Persona {N}/{total}: {name} ({archetype}) — Task: {result}"
+     e. Extract covered_issues from this persona's feedback
+     f. Pass covered_issues to the NEXT persona's Phase 4 (cumulative diversity)
+   ```
 
-2. For each archetype, generate 2 specific personas (total: 10 for default). Each persona must include:
-   - Demographics tied to the ProductProfile's intended_user
-   - A PURPOSE derived from ProductProfile.core_tasks
-   - An ENTRY POINT — not all personas start at homepage:
-     - 6/10: homepage (organic search)
-     - 2/10: pricing or features page (comparison shopping)
-     - 1/10: signup page (direct referral)
-     - 1/10: a content/docs page (if exists in SiteMap)
-   - An EMOTIONAL CONTEXT — why they're here NOW:
-     - "Just got first client, needs to invoice them in 30 minutes"
-     - "Evaluating 3 tools, will spend exactly 2 minutes"
-     - "Manager told them to check this out, not personally motivated"
-   - 3-5 BEHAVIORAL RULES as hard IF-THEN constraints (NOT personality adjectives)
-   - A NARRATIVE paragraph (used as system prompt during browsing)
+2. **Error isolation**: If a persona's browser session fails (page crash, CAPTCHA mid-session, etc.):
+   - Log the failure
+   - Skip to the next persona
+   - Do NOT abort the entire run
+   - Note the failed persona in the final report
 
-3. Cumulative diversity: each persona generation call includes summaries of ALL previously generated personas. Instruction: "Fill gaps in the collection — differ on ≥2 dimensions."
+3. **Progress output** (show after each persona completes):
+   ```
+   Persona 1/10: Maria Chen (first_timer, mobile)
+     ├── Task: "Create invoice for $500" → ❌ FAILED
+     ├── Issues found: 3 (1 critical)
+     └── Emotional arc: confident → confused → frustrated
 
-4. Diversity validation: No two personas should share the same (tech_level + purpose + device) combination.
+   Persona 2/10: James Wright (power_user, desktop)
+     ├── Task: "Create invoice in <5 steps" → ✅ COMPLETED
+     ├── Issues found: 2 (0 critical)
+     └── Emotional arc: confident → neutral → confident
+   ```
 
-**Output schema per persona**:
-```json
-{
-  "id": "persona_001",
-  "name": "Maria Chen",
-  "archetype": "first_timer",
-  "tech_level": "intermediate",
-  "purpose": "Send first invoice to a client",
-  "age": 34,
-  "industry": "healthcare",
-  "context": "Just landed first freelance client, needs to invoice them. Has 30 minutes before a meeting.",
-  "entry_point": "/",
-  "device": "mobile",
-  "competitors_used": ["Wave"],
-  "personality": {
-    "patience": 0.3,
-    "exploration_tendency": 0.8,
-    "attention_to_detail": 0.6
-  },
-  "behavioral_rules": [
-    "Skip any text longer than 2 sentences",
-    "If you can't find what you need in 3 clicks, use search",
-    "After 2 failures, express frustration out loud",
-    "Ignore anything labeled 'enterprise' or 'team plan'",
-    "You're in a hurry — go straight to your goal, don't explore"
-  ],
-  "emotional_state": "mildly_stressed",
-  "narrative": "You are Maria Chen, a 34-year-old nurse practitioner who just started freelance consulting..."
-}
-```
+4. **Cumulative diversity**: Each persona receives the previous personas' issues as "already covered." This is critical — without it, 10 personas report the same 3 issues.
 
 ---
 
-### Phase 3: Task Assignment
+### Phase 5: Journey Reconstruction
 
-**Input**: PersonaSet + ProductProfile
-**Output**: PersonaTaskMatrix (specific task per persona)
+**Input**: EnhancedActionLog (from Phase 4) for one persona
+**Output**: JourneyNarrative
 
-**Key design**: Each persona gets a SPECIFIC, MEASURABLE task — not "explore the site."
+**Purpose**: Turn a flat action log into a STORY with emotional arc and key moments. This is what makes the report engaging — founders empathize with stories, not bullet lists.
 
 **Instructions to write**:
 
-1. For each persona, derive a primary task from ProductProfile.core_tasks, filtered by the persona's purpose and archetype:
-   - First-Timer: "Sign up and [core_task_1]" (e.g., "Sign up and create your first invoice")
-   - Switcher: "[core_task_1] and compare the experience to [competitor]"
-   - Power User: "Complete [core_task_1] in the fewest steps possible"
-   - Skeptic: "Find the privacy policy, pricing details, and a reason to trust this product"
-   - Edge Case: A task that tests a boundary (mobile flow, unusual input, etc.)
+1. **Identify key moments** from the action log:
+   - `positive`: Something worked well or surprised the persona positively
+   - `confusion`: emotional_state changed to "confused" or "frustrated"
+   - `recovery`: confusion resolved, persona got back on track
+   - `abandonment`: persona gave up (if applicable)
+   - `delight`: an "aha" moment where something clicked
 
-2. Define SUCCESS CRITERIA for each task — how to determine COMPLETED vs FAILED:
-   - "Invoice created with correct amount and recipient" = COMPLETED
-   - "Reached signup form but couldn't submit" = PARTIALLY_COMPLETED
-   - "Never found the invoice creation feature" = FAILED
+2. **Build the confidence curve**: Map the emotional_state sequence to numbers:
+   - confident = 8
+   - neutral = 6
+   - confused = 4
+   - frustrated = 2
+   - ready_to_leave = 1
 
-3. Optional secondary tasks (1-2 per persona):
-   - "Check if mobile experience works"
-   - "Find pricing and understand what's free vs paid"
+3. **Write a first-person journey narrative** (3-5 sentences):
+   - Written AS the persona, in their voice
+   - References specific pages and elements
+   - Includes the "I expected X but got Y" moments
+   - Mentions competitor comparison if persona has competitor experience
 
 **Output schema**:
 ```json
 {
   "persona_id": "persona_001",
-  "primary_task": "Create an invoice for $500 to 'Acme Corp' and send it",
-  "success_criteria": "Invoice created with correct amount and recipient, and 'send' action completed",
-  "secondary_tasks": [
-    "Find the pricing page and understand what's free vs paid"
+  "confidence_curve": [8, 8, 6, 4, 2, 2, 4, 6, 8],
+  "key_moments": [
+    {"type": "positive", "step": 1, "description": "Landing page clearly explains the product"},
+    {"type": "confusion", "step": 7, "description": "'+' button opened settings, not new invoice"},
+    {"type": "recovery", "step": 10, "description": "Found create action through search"}
   ],
-  "max_actions": 20,
-  "max_time": "3 minutes"
+  "narrative": "I opened the site on my phone and immediately understood what it does — 'Send professional invoices in 30 seconds.' The signup was quick, just email and password. But the dashboard threw me — where do I create an invoice? The '+' icon opened settings, not creation. On Wave, there's a big green 'Create Invoice' button right there. I eventually found it through the search bar, but it shouldn't be that hard.",
+  "journey_summary": "Good first impression → confusion at core task → partial recovery via search"
 }
 ```
 
 ---
 
-### Phase 4: Browser Sessions
+### Phase 7: Aggregation + Scoring
 
-**Input**: One Persona + their Task + SiteMap
-**Output**: EnhancedActionLog
+**Input**: All PersonaFeedback[] + all JourneyNarrative[]
+**Output**: ComprehensiveReport
 
-**This is the core testing phase.** The LLM embodies a persona and browses the product.
-
-**State machine**: `INIT → NAVIGATE → ORIENT → ACT ⟷ OBSERVE → DECIDE → DONE`
+**This is where the magic happens — individual feedback becomes cross-persona intelligence.**
 
 **Instructions to write**:
 
-1. **INIT**: Set up browser context
-   - If persona.device is "mobile": resize viewport to 375x812 (iPhone)
-   - If "tablet": resize to 768x1024 (iPad)
-   - If "desktop": keep default viewport
+#### Step 1: Issue Deduplication
 
-2. **NAVIGATE**: Go to persona.entry_point (not always "/")
-   - If cookie banner appears, dismiss it (same logic as Scout Phase 1)
-   - Wait for page load
+Collect all issues from all PersonaFeedback. Group semantically identical issues:
+- "Can't find create button" and "Invoice creation is hidden" → same issue
+- Keep the best evidence and clearest description from across personas
+- Count how many personas independently reported each issue
 
-3. **ORIENT**: Take snapshot, identify what's available
-   - Read the accessibility snapshot
-   - Given the persona's task, plan the next action
-   - Note: the LLM should think IN CHARACTER as the persona
+#### Step 2: Severity Scoring
 
-4. **ACT**: Execute ONE action
-   - Click, type, scroll, or navigate
-   - Wait 500ms after each action
-   - Take a new snapshot
-
-5. **OBSERVE**: Check if action worked
-   - Compare before/after snapshots
-   - If unchanged → action may have failed → try alternative (RECOVER)
-   - RECOVER options: scroll to reveal element, try parent element, use keyboard
-
-6. **DECIDE**: Continue or stop?
-   - Continue if: actions < 20 AND time < 3 min AND not stuck AND task not complete
-   - Stop if: task completed OR task failed (stuck) OR limits hit
-
-7. **EMOTIONAL TRACKING**: After each action, the persona reports their emotional state:
-   - `confident` — "I know what to do"
-   - `neutral` — "This is fine"
-   - `confused` — "I don't understand what happened"
-   - `frustrated` — "This isn't working"
-   - `ready_to_leave` — "I'm about to give up"
-
-**Action prompt structure** (what the LLM sees for each step):
-
+For each unique issue, calculate a weighted severity:
 ```
-System: You are {persona.narrative}
-BEHAVIORAL RULES (MUST follow): {persona.behavioral_rules}
+severity_score = base_severity × (1 + log2(affected_personas))
 
-You are testing {product_url}. Your task: {task.primary_task}
-Success criteria: {task.success_criteria}
-
-Current page snapshot:
-{accessibility_snapshot}
-
-Your action history (last 5 steps):
-{recent_actions_summary}
-
-Issues already found by OTHER testers (find DIFFERENT ones):
-{covered_issues_from_previous_personas}
-
-Task progress: {task_progress_estimate}
-
-What do you do next? Respond as JSON:
-{
-  "thinking": "your in-character thought process",
-  "action": "click|type|scroll|navigate_back|done",
-  "target": "element description from snapshot",
-  "text": "(for type action only)",
-  "emotional_state": "confident|neutral|confused|frustrated|ready_to_leave",
-  "task_progress": "0-100% estimate"
-}
+base_severity: critical=4, high=3, medium=2, low=1
 ```
 
-**Circuit breakers** (hard stops):
-- 20 actions → force DONE
-- 3 minutes → force DONE
-- 5 consecutive failed actions → force DONE, mark session as unstable
-
-**Output schema** (EnhancedActionLog):
-```json
-{
-  "persona_id": "persona_001",
-  "entry_point": "/",
-  "actions": [
-    {
-      "step": 1,
-      "type": "click",
-      "target": "hero CTA 'Get Started Free'",
-      "expected": "Signup page",
-      "actual": "Redirected to /signup with email form",
-      "success": true,
-      "emotional_state": "confident",
-      "task_progress": "10%",
-      "notes": "Good, clear CTA. Exactly what I expected."
-    }
-  ],
-  "emotional_arc": ["confident", "confident", "neutral", "confused", "frustrated"],
-  "task_result": "FAILED",
-  "task_progress": "20%",
-  "failure_reason": "Could not find invoice creation feature after 14 actions",
-  "pages_visited": ["/", "/signup", "/dashboard"],
-  "total_actions": 14,
-  "duration_estimate": "~2.5 minutes",
-  "confusion_events": [
-    {
-      "step": 7,
-      "expected": "New invoice form",
-      "got": "Settings dropdown",
-      "gap": "'+' icon is ambiguous"
-    }
-  ]
-}
+Example: A "high" issue affecting 8/10 personas:
 ```
+3 × (1 + log2(8)) = 3 × 4 = 12
+```
+
+Sort all issues by severity_score descending.
+
+#### Step 3: Product Score (THE key deliverable)
+
+Calculate 6 dimension scores (each 1-10, averaged across personas):
+
+| Dimension | Source | Weight |
+|-----------|--------|--------|
+| First Impression | avg(persona.scores.first_impression) | 0.15 |
+| Task Completion | (completed_personas / total_personas) × 10 | 0.30 |
+| Navigation | avg(persona.scores.navigation) | 0.20 |
+| Trust & Credibility | avg(persona.scores.trust) | 0.15 |
+| Error Handling | avg(persona.scores.error_handling) | 0.10 |
+| Overall NPS | avg(persona.scores.nps) | 0.10 |
+
+```
+Product Score = weighted sum of dimension scores, rounded to 1 decimal
+```
+
+#### Step 4: "If You Fix ONE Thing"
+
+Identify the SINGLE highest-impact recommendation:
+- The issue that: (a) affects the most personas, (b) has highest severity, (c) would most improve the Product Score
+- Write it as ONE clear sentence
+- Include WHY (how many personas affected + what impact fixing it would have)
+- Include 2-3 persona quotes as evidence
+
+#### Step 5: Task Completion Rate
+
+```
+Task Completion Rate = (COMPLETED count) / (total personas) × 100%
+```
+
+Also report: average steps to complete, average time, vs estimated optimal.
+
+#### Step 6: Segment Analysis
+
+Group insights by:
+- **Tech level**: Do novices struggle more than experts? Where?
+- **Device**: Are mobile users blocked on something desktop users aren't?
+- **Archetype**: Which persona type has the worst experience?
+
+#### Step 7: Generate the Report
+
+Output the full report in Markdown format:
+
+```markdown
+# CrowdTest Report — {product_url}
+## Score: {score}/10 — {one_line_assessment}
+
+**Date**: {date} | **Personas**: {count} | **Pages visited**: {total_pages}
+**Task Completion**: {rate}% ({completed}/{total}) | **Avg NPS**: {avg_nps}
+**Cost**: ~${cost_estimate}
 
 ---
 
-### Phase 6: Feedback Synthesis
+## 🎯 If You Fix One Thing
 
-**Input**: Persona + EnhancedActionLog + Task
-**Output**: PersonaFeedback
+{highest_impact_recommendation}
 
-**Three-phase process**:
+**Why**: {N}/{total} personas were affected. {impact_description}
 
-**Phase A**: Action log already exists from Phase 4 (ground truth) ✓
+**Evidence**:
+> "{persona_1_quote}" — {persona_1_name} ({archetype})
+> "{persona_2_quote}" — {persona_2_name} ({archetype})
+> "{persona_3_quote}" — {persona_3_name} ({archetype})
 
-**Phase B**: The persona REVIEWS their action log and writes feedback IN CHARACTER:
-- First impression (first 30 seconds / first 3 actions only)
-- What worked well (with evidence from action log)
-- What didn't work (with evidence)
-- Task completion assessment
-- Comparative observations (if persona has competitor experience)
+---
 
-**Phase C**: Extract structured JSON from the narrative:
-- Tiered issues (BLOCKING → FRICTION → OBSERVATION)
-- Evidence pointers to specific action log steps
-- Absence observations ("there was no X")
-- Scores
+## 📊 Product Scorecard
 
-**Canary check**: After generating feedback, verify:
-- "Could this feedback apply to ANY product?" → if yes, it's generic → regenerate once
-- "Does every issue reference a specific action/element/page?" → if not → reject
+| Dimension | Score | Assessment |
+|-----------|-------|-----------|
+| First Impression | {score}/10 | {brief_note} |
+| Task Completion | {score}/10 | {brief_note} |
+| Navigation | {score}/10 | {brief_note} |
+| Trust & Credibility | {score}/10 | {brief_note} |
+| Error Handling | {score}/10 | {brief_note} |
+| Overall NPS | {score}/10 | {brief_note} |
+| **OVERALL** | **{score}/10** | |
 
-**Output schema**:
-```json
-{
-  "persona_id": "persona_001",
-  "first_impression": "Landing page clearly explains what this does — send invoices. But on the dashboard, I was completely lost.",
-  "task_completion": {
-    "task": "Create and send an invoice for $500 to Acme Corp",
-    "result": "FAILED",
-    "steps_taken": 14,
-    "failure_reason": "Could not find invoice creation entry point on dashboard"
-  },
-  "issues": [
-    {
-      "tier": 1,
-      "type": "discoverability",
-      "page": "/dashboard",
-      "element": "Invoice creation entry point",
-      "issue": "No visible 'Create Invoice' action on the dashboard. The '+' button opens settings, not creation.",
-      "severity": "critical",
-      "evidence": "Steps 7-14: exhaustive search of dashboard UI, tried '+' button (step 7), hamburger menu (step 9), sidebar links (steps 11-12)",
-      "suggested_fix": "Add a prominent 'Create Invoice' button to the dashboard"
-    }
-  ],
-  "absence_observations": [
-    "No onboarding wizard for first-time users",
-    "No tooltip explaining the '+' button",
-    "No keyboard shortcuts visible"
-  ],
-  "positives": [
-    {
-      "feature": "Signup flow",
-      "evidence": "Steps 2-4: completed signup in ~40 seconds",
-      "why": "Minimal fields, clear labels, no unnecessary verification"
-    }
-  ],
-  "comparative_feedback": [
-    "Wave has a large 'Create Invoice' button on the dashboard — this product should too"
-  ],
-  "scores": {
-    "first_impression": 8,
-    "task_completion": 2,
-    "navigation": 4,
-    "trust": 7,
-    "error_handling": 3,
-    "nps": 4
-  },
-  "would_pay": false,
-  "would_return": "maybe",
-  "one_line_verdict": "Great product hidden behind a discoverability problem"
-}
+---
+
+## 🔴 Critical Issues ({count})
+
+### 1. {issue_title}
+- **Severity**: Critical | **Affected**: {N}/{total} personas
+- **Description**: {description}
+- **Evidence**: {evidence_from_action_logs}
+- **Suggested fix**: {fix}
+- **Personas affected**: {names_and_archetypes}
+
+### 2. ...
+
+## 🟡 High Issues ({count})
+## 🟠 Medium Issues ({count})
+## 🟢 Low Issues ({count})
+
+---
+
+## 📖 Persona Journeys
+
+### {persona_name} — {archetype} ({device})
+**Task**: {task} → {result_emoji} {result}
+**Confidence**: {confidence_curve_as_text_bar}
+**Time**: {duration} | **Actions**: {count} | **NPS**: {nps}
+
+> {journey_narrative}
+
+(repeat for each persona)
+
+---
+
+## ✅ What's Working Well
+
+| Feature | Mentions | Evidence |
+|---------|----------|---------|
+| {feature} | {N}/{total} | {quote} |
+
+---
+
+## 📊 Segment Insights
+
+### By Tech Level
+- **Novice users**: {finding}
+- **Advanced users**: {finding}
+
+### By Device
+- **Mobile**: {finding}
+- **Desktop**: {finding}
+
+### By Archetype
+- **First-Timers**: {finding}
+- **Switchers**: {finding}
+
+---
+
+## 🔧 Recommended Fix Priority
+
+1. {fix_1} — Impact: {estimate}
+2. {fix_2} — Impact: {estimate}
+3. {fix_3} — Impact: {estimate}
+```
+
+Save this report to `crowdtest-report-{domain}-{date}.md` in the current directory.
+
+---
+
+### Phase 8: Delta Analysis
+
+**Input**: Current report + previous report (if exists)
+**Output**: DeltaReport section appended to main report
+
+**Instructions to write**:
+
+1. Check if a previous CrowdTest report exists for the same URL in the current directory (glob: `crowdtest-report-{domain}-*.md`)
+2. If no previous report → skip Phase 8, add note: "First run — no comparison available"
+3. If previous report exists:
+   - Compare overall Product Scores
+   - Match issues: which old issues are resolved? Which persist? Which are new?
+   - Compare Task Completion Rate
+   - Compare NPS
+
+**Output (appended to main report)**:
+
+```markdown
+## 📈 Delta from Previous Run
+
+**Previous**: {date} | Score: {old_score}/10
+**Current**: {date} | Score: {new_score}/10
+**Change**: {delta} ({direction})
+
+### ✅ Resolved Issues
+- {issue_that_was_fixed}
+
+### ⚠️ Persistent Issues
+- {issue_still_present}
+
+### 🆕 New Issues
+- {issue_not_in_previous_run}
+
+### Trends
+- Task Completion: {old}% → {new}% ({delta})
+- NPS: {old} → {new} ({delta})
 ```
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] SKILL.md Phase 2 generates product-derived personas with archetypes, entry points, and behavioral rules
-- [ ] SKILL.md Phase 3 assigns specific measurable tasks with success criteria
-- [ ] SKILL.md Phase 4 has complete browser session state machine with emotional tracking
-- [ ] SKILL.md Phase 4 includes the action prompt template showing what the LLM sees each step
-- [ ] SKILL.md Phase 6 has three-phase feedback with canary check
-- [ ] All output schemas match the JSON examples above
-- [ ] Instructions are unambiguous — walk through them as if you were an LLM following them
-- [ ] Phase 5, 7, 8 stubs preserved (implementation in Sprint 3)
-- [ ] Cumulative diversity mechanism documented (previous persona issues fed to next persona)
+- [ ] Multi-persona orchestration wraps Phase 4→5→6 in a loop with progress output
+- [ ] Cumulative diversity (covered_issues passed between personas) is documented
+- [ ] Error isolation: failed persona doesn't abort the run
+- [ ] Phase 5 produces JourneyNarrative with confidence_curve and key_moments
+- [ ] Phase 7 calculates Product Score with 6 weighted dimensions
+- [ ] Phase 7 produces "Fix ONE Thing" recommendation with evidence
+- [ ] Phase 7 generates the FULL Markdown report matching the template above
+- [ ] Phase 7 saves report to file
+- [ ] Phase 8 compares with previous report if exists
+- [ ] All output schemas match the JSON/Markdown examples
+- [ ] SKILL.md is complete — all 8 phases are fully implemented
 
 ## What NOT to Do
 
-- Do NOT create application code — SKILL.md is the product
-- Do NOT modify Phase 0 or Phase 1 (they're done from Sprint 1)
+- Do NOT modify Phase 0, 1, 2, 3, 4, or 6 (already implemented)
+- Do NOT create application code
 - Do NOT merge the PR
-- Do NOT implement Phase 5 (Journey Reconstruction), 7 (Aggregation), or 8 (Delta)
-
-## Test Mentally
-
-Walk through the SKILL.md as if you're an LLM:
-1. Given a ProductProfile for cal.com → can you generate 10 relevant personas?
-2. Given persona "busy freelancer" → can you assign a specific task?
-3. Given the task → can you follow the browser session instructions step by step?
-4. Given the action log → can you write grounded feedback that references specific steps?
