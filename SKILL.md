@@ -925,25 +925,206 @@ After the session ends, produce the following JSON:
 
 ---
 
-## Phase 5: Journey Recon
+## Multi-Persona Orchestration
 
-> Implementation in Sprint 3.
+> **Purpose**: Run N personas sequentially through Phases 4→5→6, with cumulative diversity, error isolation, and progress reporting. This is the loop that wraps individual persona execution.
 
-Convert the raw action log into a narrative arc with confidence curve and key moments.
+> **Input**: PersonaTaskMatrix (from Phase 3) + SiteMap (from Phase 1) + ProductProfile (from Phase 0)
+> **Output**: All EnhancedActionLog[], JourneyNarrative[], PersonaFeedback[] collected across personas
+> **Execution**: Sequential — one persona at a time
+
+### Orchestration Loop
+
+After Phase 3 produces the PersonaTaskMatrix, process each persona one at a time:
+
+```
+Initialize:
+  completed_personas = []
+  failed_personas = []
+  all_action_logs = []
+  all_journeys = []
+  all_feedback = []
+  cumulative_covered_issues = []
+
+For persona_index = 1 to N:
+  persona = personas[persona_index]
+  task = tasks[persona_index]
+
+  1. Run Phase 4 (Browser Session) for this persona
+     - Pass cumulative_covered_issues to the browser session prompt
+       so this persona explores NEW areas rather than re-discovering known issues
+     - If Phase 4 FAILS (page crash, CAPTCHA, timeout, 5 consecutive failures):
+       → Log the failure: { persona_id, persona_name, archetype, failure_reason }
+       → Add to failed_personas
+       → Output: "❌ Persona {persona_index}/{N}: {name} ({archetype}) — FAILED: {reason}"
+       → SKIP to next persona (do NOT abort the run)
+       → Continue
+
+  2. Run Phase 5 (Journey Reconstruction) for this persona
+     - Input: the EnhancedActionLog just produced
+     - Output: JourneyNarrative
+
+  3. Run Phase 6 (Feedback Synthesis) for this persona
+     - Input: Persona + EnhancedActionLog + TaskAssignment
+     - Output: PersonaFeedback
+
+  4. Collect results:
+     - Append EnhancedActionLog to all_action_logs
+     - Append JourneyNarrative to all_journeys
+     - Append PersonaFeedback to all_feedback
+     - Add to completed_personas
+
+  5. Update cumulative diversity:
+     - Extract all issue IDs from this persona's PersonaFeedback.issues[]
+     - Append to cumulative_covered_issues
+     - This ensures the NEXT persona's Phase 4 prompt includes:
+       "Previous personas already identified these issues: {cumulative_covered_issues}.
+        Focus on discovering NEW issues, different pages, or different interaction patterns."
+
+  6. Report progress:
+     Output the following after each persona completes:
+
+     Persona {persona_index}/{N}: {name} ({archetype}, {device})
+       ├── Task: "{task_description}" → {result_emoji} {task_result}
+       ├── Issues found: {issue_count} ({critical_count} critical)
+       └── Emotional arc: {emotional_arc_summary}
+
+     Where:
+       result_emoji = ✅ if COMPLETED, ⚠️ if PARTIALLY_COMPLETED, ❌ if FAILED
+       emotional_arc_summary = first_state → middle_state → final_state
+         (pick the emotional_state at steps 1, midpoint, and last)
+```
+
+### Error Isolation Rules
+
+- A failed persona does NOT abort the entire run
+- Minimum viable run: at least 1 persona must complete successfully
+- If ALL personas fail, skip Phase 7 aggregation and output an error report:
+  "All {N} personas failed. The site may be untestable. Failures: {failure_summary}"
+- Failed personas are listed in the final report under a "Failed Sessions" section
+
+### Cumulative Diversity
+
+This is CRITICAL for report quality. Without it, 10 personas report the same 3 issues.
+
+The `cumulative_covered_issues` list grows after each persona. Pass it to the next persona's Phase 4 browser session as part of the persona prompt:
+
+```
+"Issues already discovered by previous testers:
+- {issue_1_title}: {issue_1_brief_description}
+- {issue_2_title}: {issue_2_brief_description}
+
+You should STILL note these issues if you encounter them, but prioritize exploring
+different pages, flows, and interaction patterns to find NEW issues."
+```
+
+The persona should still record already-known issues if encountered (for cross-validation), but should actively seek unexplored areas.
+
+### After All Personas Complete
+
+Once all personas have been processed:
+
+1. Output a summary:
+   ```
+   ══════════════════════════════════════
+   CrowdTest Session Complete
+   ✅ Completed: {completed_count}/{N}
+   ❌ Failed: {failed_count}/{N}
+   📋 Total issues found: {total_unique_issues}
+   ══════════════════════════════════════
+   ```
+
+2. Proceed to Phase 7 (Aggregation) with:
+   - all_action_logs
+   - all_journeys
+   - all_feedback
+   - failed_personas (for inclusion in report)
+
+---
+
+## Phase 5: Journey Reconstruction
+
+> **Purpose**: Turn a flat action log into a STORY with emotional arc, confidence curve, and key moments. This is what makes the report engaging — founders empathize with stories, not bullet lists.
+
+> **Input**: EnhancedActionLog (from Phase 4) for one persona
+> **Output**: JourneyNarrative
+> **Tools used**: None (pure LLM reasoning over session data)
+
+### Step 1: Identify Key Moments
+
+Scan the EnhancedActionLog and tag each significant event with a moment type:
+
+| Moment Type | Trigger | Example |
+|-------------|---------|---------|
+| `positive` | Something worked well or surprised the persona positively | "Landing page clearly explains the product" |
+| `confusion` | emotional_state changed to "confused" or "frustrated" | "'+' button opened settings, not new invoice" |
+| `recovery` | After confusion, persona got back on track | "Found create action through search bar" |
+| `abandonment` | Persona gave up on the task or a sub-task | "Gave up finding pricing, moved to signup instead" |
+| `delight` | An "aha" moment, unexpectedly good experience | "Auto-filled company info from domain — saved 30 seconds" |
+
+Rules for moment identification:
+- Every confusion_event from the action log MUST become a `confusion` key moment
+- If a confusion is followed (within 3 steps) by successful completion of that sub-goal → also add a `recovery` moment
+- If the persona's emotional_state reaches "ready_to_leave" → add an `abandonment` moment
+- Positive moments come from: successful first attempts, fast completions, persona notes expressing approval
+
+### Step 2: Build the Confidence Curve
+
+Map the emotional_state at each action step to a numeric value:
+
+| emotional_state | value |
+|----------------|-------|
+| confident | 8 |
+| neutral | 6 |
+| confused | 4 |
+| frustrated | 2 |
+| ready_to_leave | 1 |
+
+Produce an array of integers — one per action in the log. Example: `[8, 8, 6, 4, 2, 2, 4, 6, 8]`
+
+### Step 3: Write First-Person Journey Narrative
+
+Write a 3-5 sentence narrative AS the persona, in their voice:
+- Use first person ("I opened...", "I expected...", "I couldn't find...")
+- Reference specific pages and UI elements by name
+- Include at least one "I expected X but got Y" moment (from confusion_events)
+- If the persona has competitor_experience, include a comparison: "On {competitor}, this was easier because..."
+- Match the persona's tech_comfort_level in vocabulary:
+  - Low tech comfort → simple, non-technical language
+  - High tech comfort → may reference UX patterns, conventions
+
+### Step 4: Generate Journey Summary
+
+Write a one-line summary of the arc using → arrows:
+- Format: "{start_state} → {middle_event} → {end_state}"
+- Example: "Good first impression → confusion at core task → partial recovery via search"
 
 ### Output: JourneyNarrative
 
 ```json
 {
   "persona_id": "persona_001",
-  "narrative_arc": "Confident start -> confusion at pricing -> recovery via search -> successful signup",
-  "confidence_curve": [0.8, 0.7, 0.4, 0.3, 0.5, 0.7, 0.9],
+  "confidence_curve": [8, 8, 6, 4, 2, 2, 4, 6, 8],
   "key_moments": [
-    { "step": 3, "type": "friction", "description": "Couldn't find pricing from homepage" },
-    { "step": 7, "type": "delight", "description": "Search instantly found the pricing page" }
-  ]
+    {"type": "positive", "step": 1, "description": "Landing page clearly explains the product"},
+    {"type": "confusion", "step": 7, "description": "'+' button opened settings, not new invoice"},
+    {"type": "recovery", "step": 10, "description": "Found create action through search"}
+  ],
+  "narrative": "I opened the site on my phone and immediately understood what it does — 'Send professional invoices in 30 seconds.' The signup was quick, just email and password. But the dashboard threw me — where do I create an invoice? The '+' icon opened settings, not creation. On Wave, there's a big green 'Create Invoice' button right there. I eventually found it through the search bar, but it shouldn't be that hard.",
+  "journey_summary": "Good first impression → confusion at core task → partial recovery via search"
 }
 ```
+
+### Self-Validation
+
+Before finalizing the JourneyNarrative, check:
+- [ ] confidence_curve length matches the number of actions in the action log
+- [ ] Every confusion_event from the action log is represented in key_moments
+- [ ] Narrative references at least one specific page or UI element by name
+- [ ] Narrative is written in first person, in the persona's voice
+- [ ] Journey summary accurately reflects the confidence curve shape
+
+If any check fails, revise before outputting.
 
 ---
 
@@ -1148,87 +1329,351 @@ If regeneration is needed, regenerate ONCE. If the regenerated version still fai
 
 ---
 
-## Phase 7: Aggregation
+## Phase 7: Aggregation + Scoring + Report
 
-> Implementation in Sprint 3.
+> **Purpose**: Transform individual persona feedback into cross-persona intelligence. This phase produces the Product Score, "Fix ONE Thing" recommendation, and the full Markdown report. This is where the magic happens — individual feedback becomes actionable product insight.
 
-### Steps
+> **Input**: All PersonaFeedback[] + all JourneyNarrative[] + all EnhancedActionLog[] + failed_personas[]
+> **Output**: ComprehensiveReport (Markdown file)
+> **Tools used**: None (pure LLM reasoning + file write)
 
-1. Collect all PersonaFeedback
-2. **Deduplicate**: Group semantically identical issues (different personas may describe the same problem differently)
-3. **Score severity**: `severity_weight * (1 + log2(affected_personas))`
-4. **Consensus**: Issues mentioned by >50% of personas = consensus issues
-5. **Segment analysis**: Group insights by tech_level, device, purpose
-6. **Product Score**: Rate 0-10 across 6 dimensions
-7. **Fix ONE Thing**: Identify the single highest-impact fix
-8. **Generate Markdown report**
+### Step 1: Issue Deduplication
 
-### Report Structure
+Collect ALL issues from ALL PersonaFeedback objects. Group semantically identical issues:
+
+1. For each issue across all personas, extract: title, description, severity, page, evidence
+2. Compare issues pairwise. Two issues are "the same" if they describe the same underlying problem, even with different wording:
+   - "Can't find create button" and "Invoice creation is hidden" → SAME issue
+   - "Signup form is confusing" and "Dashboard layout is confusing" → DIFFERENT issues
+3. For each group of duplicates:
+   - Keep the CLEAREST description (most specific, best evidence)
+   - Merge evidence from all personas who reported it
+   - Record `affected_personas`: list of persona_ids who independently found this issue
+   - Record `affected_count`: number of personas affected
+
+Output: `deduplicated_issues[]` — each with merged evidence and affected persona count.
+
+### Step 2: Severity Scoring
+
+For each deduplicated issue, calculate a weighted severity score:
+
+```
+severity_score = base_severity × (1 + log2(affected_count))
+
+Where base_severity:
+  critical = 4
+  high     = 3
+  medium   = 2
+  low      = 1
+```
+
+Examples:
+- A "high" issue affecting 8/10 personas: `3 × (1 + log2(8)) = 3 × 4 = 12`
+- A "critical" issue affecting 1 persona: `4 × (1 + log2(1)) = 4 × 1 = 4`
+- A "medium" issue affecting 4 personas: `2 × (1 + log2(4)) = 2 × 3 = 6`
+
+Sort ALL issues by severity_score descending. This determines report order.
+
+### Step 3: Product Score (THE key deliverable)
+
+Calculate 6 dimension scores. Each dimension is scored 1-10, then weighted:
+
+| Dimension | How to Calculate | Weight |
+|-----------|-----------------|--------|
+| First Impression | avg(persona.scores.first_impression) across all completed personas | 0.15 |
+| Task Completion | (completed_personas / total_personas) × 10 | 0.30 |
+| Navigation | avg(persona.scores.navigation) across all completed personas | 0.20 |
+| Trust & Credibility | avg(persona.scores.trust) across all completed personas | 0.15 |
+| Error Handling | avg(persona.scores.error_handling) across all completed personas | 0.10 |
+| Overall NPS | avg(persona.scores.nps) across all completed personas | 0.10 |
+
+```
+Product Score = (first_impression × 0.15) + (task_completion × 0.30) + (navigation × 0.20)
+              + (trust × 0.15) + (error_handling × 0.10) + (nps × 0.10)
+
+Round to 1 decimal place.
+```
+
+Assessment labels based on score:
+- 9.0-10.0: "Exceptional"
+- 7.5-8.9: "Strong"
+- 6.0-7.4: "Decent with notable issues"
+- 4.0-5.9: "Needs significant work"
+- 2.0-3.9: "Fundamentally broken"
+- 0.0-1.9: "Unusable"
+
+### Step 4: "If You Fix ONE Thing"
+
+Identify the SINGLE highest-impact recommendation:
+
+1. Look at the top-ranked issue by severity_score (from Step 2)
+2. Consider: does fixing this issue improve Task Completion? (Task Completion has 0.30 weight — the highest)
+3. The #1 fix is the issue that: (a) affects the most personas, (b) has highest severity, AND (c) would most improve the Product Score
+4. Write it as ONE clear, actionable sentence
+5. Include WHY: how many personas were affected + what impact fixing it would have
+6. Include 2-3 direct quotes from different personas as evidence (from their journey narratives or feedback)
+
+### Step 5: Task Completion Rate
+
+```
+Task Completion Rate = (COMPLETED count) / (total completed personas) × 100%
+```
+
+Also calculate and report:
+- Average steps to complete (for personas who COMPLETED)
+- Average time estimate (for personas who COMPLETED)
+- Personas who PARTIALLY_COMPLETED vs FAILED (with reasons)
+
+### Step 6: Segment Analysis
+
+Group insights by three dimensions:
+
+**By Tech Level** (from persona.tech_comfort_level):
+- Compare average scores, completion rates, and common issues for novice vs advanced users
+- Key question: "Do novices struggle more than experts? Where specifically?"
+
+**By Device** (from persona.device):
+- Compare mobile vs desktop experience
+- Key question: "Are mobile users blocked on something desktop users aren't?"
+
+**By Archetype** (from persona.archetype):
+- Which persona archetype has the worst experience?
+- Key question: "Which user type is most underserved?"
+
+For each segment, write a 1-2 sentence finding with evidence.
+
+### Step 7: Generate the Report
+
+Output the full report in Markdown format. Use EXACTLY this template:
 
 ```markdown
 # CrowdTest Report — {product_url}
+## Score: {score}/10 — {one_line_assessment}
 
-**Date**: {date}
-**Personas**: {count} | **Pages visited**: {total} | **Issues found**: {unique_count}
-**Product Score**: {score}/10
-**Avg NPS**: {avg_nps} | **Would pay**: {pay_rate}% | **Would return**: {return_rate}%
+**Date**: {date} | **Personas**: {count} | **Pages visited**: {total_pages}
+**Task Completion**: {rate}% ({completed}/{total}) | **Avg NPS**: {avg_nps}
+**Cost**: ~${cost_estimate}
 
-## Fix ONE Thing
-{the single highest-impact recommendation}
+---
 
-## Critical Issues ({count})
-### 1. {issue_description}
-- **Affected**: {N}/{total} personas
-- **Pages**: {pages}
-- **Evidence**: {evidence_summary}
+## 🎯 If You Fix One Thing
 
-## High Issues ({count})
-...
+{highest_impact_recommendation}
 
-## Medium Issues ({count})
-...
+**Why**: {N}/{total} personas were affected. {impact_description}
 
-## Low Issues ({count})
-...
+**Evidence**:
+> "{persona_1_quote}" — {persona_1_name} ({archetype})
+> "{persona_2_quote}" — {persona_2_name} ({archetype})
+> "{persona_3_quote}" — {persona_3_name} ({archetype})
 
-## Segment Insights
+---
+
+## 📊 Product Scorecard
+
+| Dimension | Score | Assessment |
+|-----------|-------|-----------|
+| First Impression | {score}/10 | {brief_note} |
+| Task Completion | {score}/10 | {brief_note} |
+| Navigation | {score}/10 | {brief_note} |
+| Trust & Credibility | {score}/10 | {brief_note} |
+| Error Handling | {score}/10 | {brief_note} |
+| Overall NPS | {score}/10 | {brief_note} |
+| **OVERALL** | **{score}/10** | |
+
+---
+
+## 🔴 Critical Issues ({count})
+
+### 1. {issue_title}
+- **Severity**: Critical | **Affected**: {N}/{total} personas
+- **Description**: {description}
+- **Evidence**: {evidence_from_action_logs}
+- **Suggested fix**: {fix}
+- **Personas affected**: {names_and_archetypes}
+
+### 2. ...
+
+## 🟡 High Issues ({count})
+
+(Same format as Critical Issues)
+
+## 🟠 Medium Issues ({count})
+
+(Same format as Critical Issues)
+
+## 🟢 Low Issues ({count})
+
+(Same format as Critical Issues)
+
+---
+
+## 📖 Persona Journeys
+
+### {persona_name} — {archetype} ({device})
+**Task**: {task} → {result_emoji} {result}
+**Confidence**: {confidence_curve_as_text_bar}
+**Time**: {duration} | **Actions**: {count} | **NPS**: {nps}
+
+> {journey_narrative}
+
+(repeat for each persona)
+
+---
+
+## ✅ What's Working Well
+
+| Feature | Mentions | Evidence |
+|---------|----------|---------|
+| {feature} | {N}/{total} | {quote} |
+
+---
+
+## 📊 Segment Insights
+
 ### By Tech Level
-- **Novice**: {finding}
-- **Advanced**: {finding}
+- **Novice users**: {finding}
+- **Advanced users**: {finding}
 
 ### By Device
 - **Mobile**: {finding}
 - **Desktop**: {finding}
 
-## What's Working
-- {positive} ({mention_count}/{total} personas)
+### By Archetype
+- **First-Timers**: {finding}
+- **Switchers**: {finding}
 
-## Individual Persona Reports
-<details><summary>Maria Chen (NPS: 5)</summary>
-{full_feedback}
-</details>
+---
+
+## 🔧 Recommended Fix Priority
+
+1. {fix_1} — Impact: {estimate}
+2. {fix_2} — Impact: {estimate}
+3. {fix_3} — Impact: {estimate}
 ```
+
+### Confidence Curve Text Bar
+
+Render the confidence curve as a visual text bar for each persona:
+
+```
+Confidence: ████████░░░░████░░████████  (8→4→2→4→8)
+```
+
+Map values: 8=██, 6=█░, 4=░░, 2=░░, 1=░░
+Or use a simpler representation: list the emotional states as arrows:
+```
+Confidence: confident → confident → neutral → confused → frustrated → confused → neutral → confident
+```
+
+### Failed Personas Section
+
+If any personas failed during the orchestration loop, add after "Persona Journeys":
+
+```markdown
+### ❌ Failed Sessions
+
+| Persona | Archetype | Failure Reason |
+|---------|-----------|---------------|
+| {name} | {archetype} | {reason} |
+```
+
+### Step 8: Save the Report
+
+Save the generated report to the current directory as:
+```
+crowdtest-report-{domain}-{YYYY-MM-DD}.md
+```
+
+Where `{domain}` is extracted from the product URL (e.g., `myapp.com` → `myapp-com`).
+
+Announce the save: "Report saved to crowdtest-report-{domain}-{date}.md"
 
 ---
 
 ## Phase 8: Delta Analysis
 
-> Implementation in Sprint 3.
+> **Purpose**: Compare the current run with a previous run (if one exists) to show improvement or regression. This creates the viral loop — founders fix issues, re-run, and see their score improve.
 
-Compare the current run with a previous run (if exists) to show improvement or regression.
+> **Input**: Current report + previous report (if exists in current directory)
+> **Output**: DeltaReport section appended to the main report
+> **Tools used**: File system (glob for previous reports)
 
-### Output: DeltaReport
+### Step 1: Find Previous Report
 
-```json
-{
-  "previous_score": 5.2,
-  "current_score": 7.1,
-  "delta": "+1.9",
-  "resolved_issues": ["Pricing page CTA mismatch"],
-  "new_issues": ["Mobile nav overlap on small screens"],
-  "persistent_issues": ["Onboarding flow too long"]
-}
+Search the current directory for previous CrowdTest reports for the same URL:
 ```
+Glob pattern: crowdtest-report-{domain}-*.md
+```
+
+- If no previous report exists → skip Phase 8, append to the report:
+  ```markdown
+  ---
+  ## 📈 Delta from Previous Run
+
+  *First run — no comparison available. Run CrowdTest again after making changes to see improvement.*
+  ```
+- If multiple previous reports exist → use the most recent one (by date in filename)
+- Read the previous report to extract: Product Score, issues list, Task Completion Rate, NPS
+
+### Step 2: Compare Scores
+
+Extract from both reports:
+- Overall Product Score
+- Each dimension score (First Impression, Task Completion, Navigation, Trust, Error Handling, NPS)
+- Task Completion Rate
+- Average NPS
+
+Calculate deltas for each metric.
+
+### Step 3: Match Issues
+
+Compare current issues with previous issues:
+
+1. **Resolved Issues**: Issues in the previous report that are NOT in the current report
+   - These represent fixes the team made between runs
+2. **Persistent Issues**: Issues that appear in BOTH reports
+   - These are still unfixed
+3. **New Issues**: Issues in the current report that were NOT in the previous report
+   - These are regressions or newly discovered problems
+
+Match issues by semantic similarity (same as deduplication logic in Phase 7 Step 1).
+
+### Step 4: Generate Delta Section
+
+Append this section to the main report:
+
+```markdown
+---
+
+## 📈 Delta from Previous Run
+
+**Previous**: {date} | Score: {old_score}/10
+**Current**: {date} | Score: {new_score}/10
+**Change**: {delta} ({direction})
+
+### ✅ Resolved Issues
+- {issue_that_was_fixed}
+
+### ⚠️ Persistent Issues
+- {issue_still_present}
+
+### 🆕 New Issues
+- {issue_not_in_previous_run}
+
+### Trends
+- Task Completion: {old}% → {new}% ({delta})
+- NPS: {old} → {new} ({delta})
+```
+
+Where `{direction}` is one of:
+- "improved" if delta > 0
+- "declined" if delta < 0
+- "unchanged" if delta = 0
+
+### Step 5: Save Updated Report
+
+Re-save the report file with the delta section appended.
 
 ---
 
