@@ -1716,4 +1716,21 @@ Re-save the report file with the delta section appended.
 
 ---
 
+## Cleanup
+
+After the report is generated, clean up all browser state:
+
+1. **Close all browser tabs** opened during the test (`browser_close`)
+2. **Delete temporary files** — remove any screenshots, action logs, or intermediate JSON files created during the run (unless `--verbose` was set)
+3. **Summary to user** — print a one-line summary:
+   ```
+   ✅ CrowdTest complete — Score: X/10 | N issues found | Report: [path]
+   ```
+4. **If report was written to file** — confirm the file path
+5. **If `--output` was not set** — the full report was already printed to stdout, just print the summary line
+
+Do NOT leave browser windows open after the run finishes.
+
+---
+
 *CrowdTest: 20 junior product reviewers who each spend 2 minutes on your site. Not 20 real users — but infinitely better than testing alone at 11pm.*
