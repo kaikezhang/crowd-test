@@ -679,11 +679,19 @@ Secondary tasks should be relevant to the persona's archetype:
 
 ### Step 4: Set constraints
 
-Each task assignment gets:
-- `max_actions`: 20 (hard limit — circuit breaker)
-- `max_time`: "3 minutes" (real users form opinions fast)
+Set `max_actions` and `max_time` per task based on complexity:
 
-These are NOT configurable per persona — they are universal circuit breakers.
+| Complexity | max_actions | max_time | When to use |
+|-----------|-------------|----------|-------------|
+| Light | 10-15 | 2 min | Single-page eval, one feature check, quick impression |
+| Standard | 20-30 | 5 min | Core flow completion (signup → key action → result) |
+| Deep | 30-50 | 10 min | Multi-step workflow, feature-rich editor, import/export pipeline |
+
+**How to choose**: Count the number of distinct UI steps needed to complete the task. Each step ≈ 2-3 actions (navigate, interact, observe). Multiply by 2-3 and round up for recovery attempts.
+
+**Focus Mode tasks** tend to be Light or Standard — the speed-run to the target doesn’t count against the real testing budget, so keep limits tight.
+
+**Full-flow tasks** should be Standard or Deep depending on the product’s complexity.
 
 ### Output: TaskAssignment
 
@@ -698,8 +706,8 @@ For each persona, produce the following JSON:
     "Find the pricing page and understand what's free vs paid"
   ],
   "focus_features": [],
-  "max_actions": 20,
-  "max_time": "3 minutes"
+  "max_actions": 25,
+  "max_time": "5 minutes"
 }
 ```
 
@@ -785,8 +793,8 @@ If Focus Mode specifies particular features/pages:
 5. Run a real E2E session using ORIENT → ACT → OBSERVE → DECIDE.
 
 ## Session Rules
-- Maximum 20 actions
-- Maximum 3 minutes
+- Maximum {task.max_actions} actions
+- Maximum {task.max_time}
 - Stop after 5 consecutive failures
 - Track emotional state after every action
 - Use accessibility snapshots as the primary observation method
@@ -835,8 +843,8 @@ For each action:
 Keep your thinking SHORT (1-2 sentences max). Report emotional state as a single word. Do not narrate or analyze at length.
 
 ### Circuit Breakers
-- Max 20 actions → force DONE
-- Max 3 minutes → force DONE
+- Max {task.max_actions} actions → force DONE
+- Max {task.max_time} → force DONE
 - 5 consecutive failures → force DONE, mark FAILED
 
 ### Emotional States
