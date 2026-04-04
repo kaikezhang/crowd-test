@@ -29,6 +29,41 @@ Optional flags:
 /crowd-test https://myapp.com --personas 5 --context "B2B invoicing tool for freelancers" --focus "onboarding flow" --competitors "FreshBooks, Wave"
 ```
 
+## Execution Mode Detection
+
+Before starting the pipeline, determine which execution mode to use. CrowdTest supports two modes:
+
+**Orchestrator Mode** — each persona is tested by an independent sub-agent with its own browser:
+- If `sessions_spawn` tool is available → use OpenClaw native dispatch
+- Else if `codex` CLI is on PATH → use Codex CLI dispatch
+- Else if `claude` CLI is on PATH → use Claude Code CLI dispatch
+
+**Legacy Mode** — single agent runs all personas inline (original behavior):
+- If none of the above orchestrator capabilities are detected → Legacy Mode
+
+**User override**: The `--mode` flag forces a specific mode:
+```
+/crowd-test https://myapp.com --mode orchestrator
+/crowd-test https://myapp.com --mode legacy
+```
+
+**Detection logic** (run this at the start, before Phase 1):
+```
+1. If --mode flag is set → use that mode
+2. Else if sessions_spawn tool exists → Orchestrator Mode
+3. Else if `which codex` succeeds → Orchestrator Mode
+4. Else if `which claude` succeeds → Orchestrator Mode
+5. Else → Legacy Mode
+```
+
+Announce the detected mode before proceeding:
+- Orchestrator: "🤖 CrowdTest running in Orchestrator Mode — each persona gets an independent agent + browser"
+- Legacy: "🔄 CrowdTest running in Legacy Mode — single agent, serial execution"
+
+The rest of this document uses **[ORCHESTRATOR]** and **[LEGACY]** tags to mark mode-specific instructions. Sections without tags apply to both modes.
+
+---
+
 ## How It Works
 
 CrowdTest runs a 9-phase pipeline (Phase 0-8). Each phase feeds the next:
@@ -46,6 +81,12 @@ Phase 8: Delta Analysis     → Compare with previous run if exists
 ```
 
 **Execution order**: Phase 1 runs first (Scout needs raw browser data), then Phase 0 analyzes what Scout found. The numbering reflects conceptual priority — understanding the product (Phase 0) is foundational — but Scout must run first to gather the data.
+
+**Mode differences**:
+- **Phases 0-3**: Identical in both modes (main agent executes)
+- **Phases 4-6 [ORCHESTRATOR]**: Main agent dispatches one sub-agent per persona. Each sub-agent opens its own browser, runs the E2E test, and writes structured JSON output. Serial execution — one persona at a time.
+- **Phases 4-6 [LEGACY]**: Single agent runs all personas inline (current behavior, unchanged)
+- **Phases 7-8**: Identical in both modes (main agent aggregates results)
 
 ---
 
@@ -689,7 +730,170 @@ Before proceeding to Phase 4, verify:
 
 ---
 
-## Phase 4: Browser Sessions
+## [ORCHESTRATOR MODE] Persona Test Package
+
+> **Purpose**: In Orchestrator Mode, the main agent does NOT directly play every persona. Instead, it prepares a self-contained test package for a sub-agent, sends that sub-agent into an isolated worktree, and has the sub-agent perform real E2E testing with a fresh browser context.
+
+For each persona, the main agent MUST write a `PERSONA-TASK.md` file in the persona worktree containing all required context.
+
+### `PERSONA-TASK.md` Template
+
+```markdown
+# Persona Test Instructions
+
+## Your Identity
+- Name: {persona.name}
+- Archetype: {persona.archetype}
+- Age: {persona.age}
+- Industry: {persona.industry}
+- Tech level: {persona.tech_level}
+- Device: {persona.device}
+- Starting emotional state: {persona.emotional_state}
+
+## Your Narrative
+{persona.narrative}
+
+## Your Behavioral Rules
+{persona.behavioral_rules as numbered list}
+
+## Your Primary Task
+{task.primary_task}
+
+## Success Criteria
+{task.success_criteria}
+
+## Secondary Tasks
+{task.secondary_tasks}
+
+## Target Product
+- URL: {product_url}
+- Entry point: {persona.entry_point}
+- SiteMap: {site_map_json}
+- ProductProfile summary: {product_profile_summary}
+
+## Issues Already Found By Earlier Personas
+{covered_issues summary, or "None yet"}
+
+## Browser Instructions
+1. Launch a fresh browser context.
+2. Use Playwright MCP if available; otherwise use Playwright directly.
+3. Set viewport by device:
+   - desktop: 1920x1080
+   - tablet: 768x1024
+   - mobile: 375x812
+4. Navigate to the entry point.
+5. Run a real E2E session using ORIENT → ACT → OBSERVE → DECIDE.
+
+## Session Rules
+- Maximum 20 actions
+- Maximum 3 minutes
+- Stop after 5 consecutive failures
+- Track emotional state after every action
+- Use accessibility snapshots as the primary observation method
+- If you encounter an already-known issue, you may note it, but prioritize discovering NEW issues or new evidence
+
+## Required Output Files
+Write these files in the current worktree before exiting:
+1. `action-log.json`
+2. `journey.json`
+3. `feedback.json`
+```
+
+### Required Output Schemas
+
+**`action-log.json`**
+```json
+{
+  "persona_id": "persona_001",
+  "entry_point": "/",
+  "device": "mobile",
+  "status": "COMPLETED|PARTIALLY_COMPLETED|FAILED|ERROR",
+  "actions": [
+    {
+      "step": 1,
+      "type": "click",
+      "target": "hero CTA 'Get Started Free'",
+      "expected": "Signup page",
+      "actual": "Redirected to /signup with email form",
+      "success": true,
+      "emotional_state": "confident",
+      "task_progress": "10%",
+      "notes": "Good, clear CTA. Exactly what I expected."
+    }
+  ],
+  "emotional_arc": ["confident", "neutral", "confused"],
+  "task_result": "FAILED",
+  "task_progress": "20%",
+  "failure_reason": "Could not find invoice creation feature after 14 actions",
+  "pages_visited": ["/", "/signup", "/dashboard"],
+  "total_actions": 14,
+  "duration_estimate": "~2.5 minutes",
+  "confusion_events": [
+    {
+      "step": 7,
+      "expected": "New invoice form",
+      "got": "Settings dropdown",
+      "gap": "'+' icon is ambiguous"
+    }
+  ]
+}
+```
+
+**`journey.json`**
+```json
+{
+  "persona_id": "persona_001",
+  "confidence_curve": [8, 8, 6, 4, 2, 2, 4, 6, 8],
+  "key_moments": [
+    {"type": "positive", "step": 1, "description": "Landing page clearly explains the product"},
+    {"type": "confusion", "step": 7, "description": "'+' button opened settings, not new invoice"},
+    {"type": "recovery", "step": 10, "description": "Found create action through search"}
+  ],
+  "narrative": "I opened the site on my phone and immediately understood what it does...",
+  "journey_summary": "Good first impression → confusion at core task → partial recovery via search"
+}
+```
+
+**`feedback.json`**
+```json
+{
+  "persona_id": "persona_001",
+  "task_completion": {
+    "task": "Create and send an invoice for $500 to Acme Corp",
+    "result": "FAILED",
+    "steps_taken": 14,
+    "failure_reason": "Could not find invoice creation entry point on dashboard"
+  },
+  "issues": [
+    {
+      "tier": 1,
+      "type": "discoverability",
+      "page": "/dashboard",
+      "element": "Invoice creation entry point",
+      "issue": "No visible 'Create Invoice' action on the dashboard.",
+      "severity": "critical",
+      "evidence": "Steps 7-14: exhaustive search of dashboard UI",
+      "suggested_fix": "Add a prominent 'Create Invoice' button to the dashboard"
+    }
+  ],
+  "positives": [],
+  "scores": {
+    "first_impression": 8,
+    "task_completion": 2,
+    "navigation": 4,
+    "trust": 7,
+    "error_handling": 3,
+    "nps": 4
+  },
+  "would_pay": false,
+  "would_return": "maybe",
+  "one_line_verdict": "Great product hidden behind a discoverability problem"
+}
+```
+
+---
+
+## [LEGACY MODE] Phase 4: Browser Sessions
 
 > **Purpose**: The core testing phase. The LLM embodies a persona and browses the product, executing their assigned task while tracking emotional state and logging every action. This produces the ground truth action log that all feedback is built on.
 
@@ -925,7 +1129,86 @@ After the session ends, produce the following JSON:
 
 ---
 
-## Multi-Persona Orchestration
+## [ORCHESTRATOR MODE] Multi-Persona Orchestration
+
+> **Purpose**: In Orchestrator Mode, the main agent runs one persona at a time by dispatching a sub-agent into an isolated git worktree. The sub-agent performs the actual E2E browser session and writes structured JSON output files. This preserves persona isolation while staying serial and resource-safe.
+
+> **Input**: PersonaTaskMatrix + SiteMap + ProductProfile
+> **Output**: All `action-log.json`, `journey.json`, and `feedback.json` outputs collected across personas
+> **Execution**: Sequential — exactly one sub-agent active at a time
+
+### Orchestrator Loop
+
+After Phase 3 produces the PersonaTaskMatrix, process each persona one at a time:
+
+```
+Initialize:
+  completed_personas = []
+  failed_personas = []
+  all_action_logs = []
+  all_journeys = []
+  all_feedback = []
+  cumulative_covered_issues = []
+
+For persona_index = 1 to N:
+  1. Create isolated worktree:
+     git worktree add -b crowdtest/persona-{persona_index} /tmp/crowdtest-persona-{persona_index} main
+
+  2. Write PERSONA-TASK.md into the worktree using the template above.
+
+  3. Dispatch ONE sub-agent using the best available mechanism:
+     - OpenClaw: `sessions_spawn(... cwd=/tmp/crowdtest-persona-{persona_index})`
+     - Codex CLI: `cd worktree && codex ...`
+     - Claude Code CLI: `cd worktree && claude -p ...`
+
+  4. Wait for completion. Then read:
+     - action-log.json
+     - journey.json
+     - feedback.json
+
+  5. If output files are missing, timeout occurs, or the sub-agent crashes:
+     - mark persona as failed
+     - log failure_reason
+     - continue to the next persona
+
+  6. If successful:
+     - append results to all_action_logs / all_journeys / all_feedback
+     - extract issue summaries into cumulative_covered_issues
+     - report progress to the user
+
+  7. Clean up the worktree:
+     - git worktree remove /tmp/crowdtest-persona-{persona_index} --force
+     - git branch -D crowdtest/persona-{persona_index}
+```
+
+### Sub-Agent Dispatch Rules
+
+- Use a **fresh browser context** for each persona
+- Serial only — do NOT run multiple personas in parallel
+- Pass cumulative covered issues to each next persona so they prioritize unexplored paths
+- If one persona fails, skip it and continue; do NOT abort the whole run
+
+### Progress Output
+
+After each persona completes, output:
+
+```
+Persona {persona_index}/{N}: {name} ({archetype}, {device})
+  ├── Task: "{task_description}" → {result_emoji} {task_result}
+  ├── Issues found: {issue_count} ({critical_count} critical)
+  └── Emotional arc: {emotional_arc_summary}
+```
+
+### Failure Handling
+
+- Timeout → mark failed, continue
+- Missing output files → mark failed, continue
+- Browser crash / page crash / CAPTCHA mid-session → mark failed, continue
+- If **all** personas fail, stop before Phase 7 and report the site as untestable in the current environment
+
+---
+
+## [LEGACY MODE] Multi-Persona Orchestration
 
 > **Purpose**: Run N personas sequentially through Phases 4→5→6, with cumulative diversity, error isolation, and progress reporting. This is the loop that wraps individual persona execution.
 
@@ -1042,7 +1325,15 @@ Once all personas have been processed:
 
 ---
 
-## Phase 5: Journey Reconstruction
+## [ORCHESTRATOR MODE] Phase 5: Journey Reconstruction
+
+In Orchestrator Mode, Phase 5 is executed **inside the sub-agent session**. The sub-agent reads its own action log, reconstructs the confidence curve and key moments, and writes the result to `journey.json`.
+
+The main agent does **not** regenerate the journey inline. It simply reads `journey.json`, validates that it exists, and includes it in Phase 7 aggregation.
+
+---
+
+## [LEGACY MODE] Phase 5: Journey Reconstruction
 
 > **Purpose**: Turn a flat action log into a STORY with emotional arc, confidence curve, and key moments. This is what makes the report engaging — founders empathize with stories, not bullet lists.
 
@@ -1128,7 +1419,15 @@ If any check fails, revise before outputting.
 
 ---
 
-## Phase 6: Feedback Synthesis
+## [ORCHESTRATOR MODE] Phase 6: Feedback Synthesis
+
+In Orchestrator Mode, Phase 6 is executed **inside the sub-agent session**. The sub-agent transforms its own grounded session data into structured feedback and writes the result to `feedback.json`.
+
+The main agent does **not** regenerate feedback inline. It reads `feedback.json`, validates that required fields are present, and passes the collected PersonaFeedback objects into Phase 7.
+
+---
+
+## [LEGACY MODE] Phase 6: Feedback Synthesis
 
 > **Purpose**: Transform the raw action log into grounded, evidence-linked feedback. This is a THREE-PHASE process that ensures feedback is specific to THIS product and references actual events from the browsing session. Generic feedback like "the UI could be improved" is a failure mode this phase is designed to prevent.
 
@@ -1330,6 +1629,17 @@ If regeneration is needed, regenerate ONCE. If the regenerated version still fai
 ---
 
 ## Phase 7: Aggregation + Scoring + Report
+
+**Input notes by mode**:
+- **[LEGACY]** The main agent already has all persona outputs in memory from inline execution of Phases 4-6.
+- **[ORCHESTRATOR]** The main agent reads `action-log.json`, `journey.json`, and `feedback.json` from each persona worktree (or from copied-in-memory equivalents after collection).
+
+Both modes MUST normalize into the same three structures before aggregation:
+- `EnhancedActionLog[]`
+- `JourneyNarrative[]`
+- `PersonaFeedback[]`
+
+Once normalized, the aggregation, scoring, report generation, and delta analysis logic is identical.
 
 > **Purpose**: Transform individual persona feedback into cross-persona intelligence. This phase produces the Product Score, "Fix ONE Thing" recommendation, and the full Markdown report. This is where the magic happens — individual feedback becomes actionable product insight.
 
@@ -1682,6 +1992,7 @@ Re-save the report file with the delta section appended.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `personas` | 10 | Number of personas to generate |
+| `mode` | auto | Execution mode: `auto`, `orchestrator`, or `legacy` |
 | `model` | sonnet | LLM model (sonnet / opus) |
 | `context` | (none) | Product description to improve analysis |
 | `focus` | (none) | Specific area to focus testing on |
@@ -1714,6 +2025,10 @@ Re-save the report file with the delta section appended.
 | 10 | ~$0.60 | ~$3.00 |
 | 20 | ~$1.20 | ~$6.00 |
 
+**Mode note**:
+- **Legacy Mode**: cost is mostly the main agent's browser + reasoning tokens
+- **Orchestrator Mode**: each persona also consumes sub-agent tokens (Codex / Claude Code), so total cost is higher but testing is more isolated and more realistic
+
 ---
 
 ## Cleanup
@@ -1722,14 +2037,16 @@ After the report is generated, clean up all browser state:
 
 1. **Close all browser tabs** opened during the test (`browser_close`)
 2. **Delete temporary files** — remove any screenshots, action logs, or intermediate JSON files created during the run (unless `--verbose` was set)
-3. **Summary to user** — print a one-line summary:
+3. **[ORCHESTRATOR] Remove temporary worktrees** — delete `/tmp/crowdtest-persona-*` worktrees and corresponding temporary branches after results are collected
+4. **[ORCHESTRATOR] Remove sub-agent artifacts** — clean `PERSONA-TASK.md`, copied snapshots, and transient logs once the final report is saved (unless `--verbose` was set)
+5. **Summary to user** — print a one-line summary:
    ```
    ✅ CrowdTest complete — Score: X/10 | N issues found | Report: [path]
    ```
-4. **If report was written to file** — confirm the file path
-5. **If `--output` was not set** — the full report was already printed to stdout, just print the summary line
+6. **If report was written to file** — confirm the file path
+7. **If `--output` was not set** — the full report was already printed to stdout, just print the summary line
 
-Do NOT leave browser windows open after the run finishes.
+Do NOT leave browser windows open, worktrees, or orphaned sub-agent artifacts behind after the run finishes.
 
 ---
 
