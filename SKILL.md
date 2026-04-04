@@ -697,6 +697,7 @@ For each persona, produce the following JSON:
   "secondary_tasks": [
     "Find the pricing page and understand what's free vs paid"
   ],
+  "focus_features": [],
   "max_actions": 20,
   "max_time": "3 minutes"
 }
@@ -754,6 +755,17 @@ For each persona, the main agent MUST write a `PERSONA-TASK.md` file in the pers
 
 ## Secondary Tasks
 {task.secondary_tasks}
+
+## Focus Mode (if set)
+{task.focus_features — or "None — test the full flow"}
+
+If Focus Mode specifies particular features/pages:
+- Your ONLY job is to test those specific features. Nothing else.
+- Use the **shortest path** to reach the target feature. Skip onboarding, skip tutorials, skip anything not on the path.
+- If reaching the feature requires setup steps (e.g., creating an account, adding data), do those steps as FAST as possible with minimal attention — they are not being tested, they are just prerequisites.
+- Once at the target feature, test it thoroughly from your persona's perspective.
+- Do NOT evaluate pages you pass through on the way — only the target.
+- Example: if focus is "export flow", speed-run through landing → editor → add cities (minimal), then spend your action budget on the export modal, resolution picker, progress indicator, and output.
 
 ## Target Product
 - URL: {product_url}
@@ -1427,7 +1439,7 @@ Re-save the report file with the delta section appended.
 | `personas` | 10 | Number of personas to generate |
 | `model` | sonnet | LLM model (sonnet / opus) |
 | `context` | (none) | Product description to improve analysis |
-| `focus` | (none) | Specific area to focus testing on |
+| `focus` | (none) | Specific feature(s) to test. Activates Focus Mode: sub-agents speed-run to the target and only test specified features. Example: `--focus "export flow, mobile nav"` |
 | `competitors` | (auto-detected) | Known competitors for comparison |
 | `audience` | (auto-detected) | Target audience hint |
 | `output` | stdout | Output file path |
