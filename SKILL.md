@@ -683,9 +683,9 @@ Set `max_actions` and `max_time` per task based on complexity:
 
 | Complexity | max_actions | max_time | When to use |
 |-----------|-------------|----------|-------------|
-| Light | 10-15 | 2 min | Single-page eval, one feature check, quick impression |
-| Standard | 20-30 | 5 min | Core flow completion (signup → key action → result) |
-| Deep | 30-50 | 10 min | Multi-step workflow, feature-rich editor, import/export pipeline |
+| Light | 10-20 | 10 min | Single-page eval, one feature check, quick impression |
+| Standard | 20-40 | 20 min | Core flow completion (signup → key action → result) |
+| Deep | 40-60 | 40 min | Multi-step workflow, feature-rich editor, import/export pipeline |
 
 **How to choose**: Count the number of distinct UI steps needed to complete the task. Each step ≈ 2-3 actions (navigate, interact, observe). Multiply by 2-3 and round up for recovery attempts.
 
