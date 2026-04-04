@@ -9,8 +9,13 @@ description: "Generate diverse AI personas to browse-test your web product and f
 
 ## Prerequisites
 
-- Playwright MCP server (`@playwright/mcp`) must be available
-  - If not available, run: `npx @playwright/mcp@latest`
+- **Sub-agent dispatch capability** — at least one of:
+  - OpenClaw with `sessions_spawn` (recommended)
+  - `codex` CLI on PATH
+  - `claude` CLI on PATH
+- **Playwright** — sub-agents need browser automation:
+  - Playwright MCP server (`@playwright/mcp`), or
+  - Playwright installed in the worktree (`npx playwright install chromium`)
 - Claude Sonnet 4.6+ (or Opus 4.6 for higher quality)
 
 ## Quick Start
@@ -39,9 +44,7 @@ Phase 1: Scout             → Is the site testable? Build a site map.
 Phase 0: Product Analysis  → What IS this product? Who's it for?
 Phase 2: Persona Generation → Who would use this? (derived from the product)
 Phase 3: Task Assignment    → What should each persona try to do?
-Phase 4: Browser Sessions   → Each persona browses with task + emotional tracking
-Phase 5: Journey Recon      → Action log → narrative arc + key moments
-Phase 6: Feedback Synthesis  → Grounded, evidence-linked feedback per persona
+Phase 4-6: Sub-Agent E2E    → Dispatch agent per persona: browse, journal, feedback
 Phase 7: Aggregation        → Product Score (X/10) + "Fix ONE Thing" report
 Phase 8: Delta Analysis     → Compare with previous run if exists
 ```
@@ -1371,7 +1374,6 @@ Re-save the report file with the delta section appended.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `personas` | 10 | Number of personas to generate |
-
 | `model` | sonnet | LLM model (sonnet / opus) |
 | `context` | (none) | Product description to improve analysis |
 | `focus` | (none) | Specific area to focus testing on |
@@ -1398,11 +1400,11 @@ Re-save the report file with the delta section appended.
 
 ## Cost Estimate
 
-| Personas | Sonnet | Opus |
-|----------|--------|------|
-| 5 | ~$0.30 | ~$1.50 |
-| 10 | ~$0.60 | ~$3.00 |
-| 20 | ~$1.20 | ~$6.00 |
+| Personas | Estimated Cost (Codex sub-agents) | Estimated Cost (CC sub-agents) |
+|----------|-----------------------------------|---------------------------------|
+| 5 | ~$1-2 | ~$3-5 |
+| 10 | ~$2-4 | ~$5-10 |
+| 20 | ~$4-8 | ~$10-20 |
 
 **Note**: Each persona consumes sub-agent tokens (Codex / Claude Code) in addition to the main agent's orchestration tokens. Cost is higher than single-agent approaches but testing is more isolated and realistic.
 
