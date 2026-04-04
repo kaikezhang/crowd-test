@@ -498,14 +498,39 @@ Each persona MUST have 3-5 behavioral rules. Rules should be consistent with the
 
 These numeric traits inform behavioral rules but are NOT used directly during browsing. They serve as metadata for aggregation analysis.
 
-#### 2g: Device
+#### 2g: Device & Environment
+
+Each persona MUST have a `device` and `viewport` that defines their testing environment. The sub-agent will resize the browser to this exact viewport before testing.
 
 Assign across the full persona set following this distribution:
 - **6 out of 10**: `desktop`
 - **3 out of 10**: `mobile`
 - **1 out of 10**: `tablet`
 
-Edge Case personas should lean toward mobile or tablet to test responsive design.
+**Device-viewport mapping** (pick one per persona for variety):
+
+| Device | Viewport | Notes |
+|--------|----------|-------|
+| `desktop_1080p` | 1920×1080 | Standard full HD monitor |
+| `desktop_1440p` | 2560×1440 | High-res monitor |
+| `desktop_laptop` | 1366×768 | Common laptop screen |
+| `mobile_iphone` | 390×844 | iPhone 14 / 15 |
+| `mobile_iphone_se` | 375×667 | iPhone SE / older small phones |
+| `mobile_android` | 412×915 | Pixel 7 / Samsung Galaxy |
+| `tablet_ipad` | 820×1180 | iPad Air |
+| `tablet_ipad_mini` | 768×1024 | iPad Mini |
+
+**Distribution rules**:
+- Desktop personas: vary between 1080p, 1440p, and laptop viewports
+- Mobile personas: mix iPhone and Android viewports
+- Tablet personas: use iPad variants
+- Edge Case personas should lean toward mobile or unusual viewports (small phones, large tablets)
+
+**Persona JSON must include**:
+```json
+"device": "mobile_iphone",
+"viewport": {"width": 390, "height": 844}
+```
 
 #### 2h: Competitors used (for Switcher archetypes)
 
@@ -742,10 +767,8 @@ For each persona, the main agent MUST write a `PERSONA-TASK.md` file in the pers
 ## Browser Instructions
 1. Launch a fresh browser context.
 2. Use Playwright MCP if available; otherwise use Playwright directly.
-3. Set viewport by device:
-   - desktop: 1920x1080
-   - tablet: 768x1024
-   - mobile: 375x812
+3. Set viewport to EXACTLY {persona.viewport.width} x {persona.viewport.height}
+   This simulates the persona's real device. Do NOT use a different resolution.
 4. Navigate to the entry point.
 5. Run a real E2E session using ORIENT → ACT → OBSERVE → DECIDE.
 
@@ -785,7 +808,7 @@ For each persona, the main agent MUST write a `PERSONA-TASK.md` file in the pers
 INIT → NAVIGATE → ORIENT → ACT ⟷ OBSERVE → DECIDE → DONE
 
 ### INIT
-Set viewport by device type. Initialize action_count=0, consecutive_failures=0.
+Set viewport to EXACTLY {persona.viewport.width} x {persona.viewport.height} using browser_resize. This is critical — the persona's device defines the testing environment. Initialize action_count=0, consecutive_failures=0.
 
 ### NAVIGATE
 Go to entry_point URL. If cookie banner appears, dismiss it. If navigation fails, retry once.
@@ -820,17 +843,23 @@ When you become confused/frustrated, log a confusion_event:
 ## After Testing: Feedback Synthesis (feedback.json)
 
 ### Phase B: In-Character Review
-Review your own action log and write honest feedback:
+Review your own action log and write honest feedback.
+
+**Be ruthlessly honest. Zero tolerance for anything that hurts UX, brand image, conversion, or professionalism — even subtle issues.**
+
+Cover ALL of these:
 - **First impression** (first 3 actions only)
 - **What worked well** (with step references)
 - **What didn't work** (with step, page, element, expected vs actual)
 - **Task completion assessment** (in your own words)
+- **Visual quality** — Does the UI look polished, modern, professional? Note color issues, alignment problems, font hierarchy, visual clutter, broken layouts at YOUR viewport size.
+- **Device-specific issues** — At your viewport ({persona.viewport.width}x{persona.viewport.height}), are elements cut off, overlapping, too small to tap (mobile), or wasting space (desktop)?
 
 ### Phase C: Structured Extraction
 Extract from your narrative:
 - **Issues**: tier(1-3), type, page, element, severity, evidence steps, suggested_fix
 - **Positives**: feature, evidence steps, why it worked
-- **Scores**: first_impression, task_completion, navigation, trust, error_handling, nps (0-10)
+- **Scores** (each 0-10): first_impression, task_completion, navigation, trust, error_handling, visual_quality, device_fit, nps
 - **Verdict**: would_pay, would_return, one_line_verdict
 
 ### Canary Self-Validation
