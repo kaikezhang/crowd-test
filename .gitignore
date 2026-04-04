@@ -1,0 +1,29 @@
+# Runtime / orchestration artifacts
+.vibeflow/state/
+.vibeflow/dashboard/
+.vibeflow/events.jsonl
+.vibeflow/flows/
+.vibeflow/intents/
+.vibeflow/specs/
+
+# Browser / debug artifacts
+.gstack/
+*.log
+
+# Generated reports / outputs
+crowdtest-report*.md
+crowd-test-results/
+
+# Local scratch / temp docs
+HANDOFF.md
+TASK.md
+TASK-*.md
+
+# Local agent metadata
+.agents/
+.claude/
+
+# OS/editor junk
+.DS_Store
+*.swp
+*.swo

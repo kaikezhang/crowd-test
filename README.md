@@ -1,236 +1,300 @@
-# 🧪 CrowdTest
+# CrowdTest
 
-> AI-powered synthetic user testing. One command. Zero users needed.
+> Generate synthetic users, let them operate your product like real people, and get brutally honest feedback.
 
-```bash
-crowdtest https://myapp.com
-```
+CrowdTest is an **Agent Skill** for running **multi-agent product testing**.
 
-10 AI personas browse your product → find UX issues you can't see → deliver a prioritized report.
+A main agent:
+1. understands the product,
+2. creates personas,
+3. assigns focused tasks,
+4. dispatches one sub-agent per persona,
+5. lets each sub-agent use a real browser in an isolated worktree,
+6. aggregates the findings into a report.
 
----
-
-## Why CrowdTest?
-
-You just rebuilt your onboarding flow. It's 11pm. You need fresh eyes but have nobody to ask.
-
-| Alternative | Cost | Speed | CrowdTest |
-|------------|------|-------|-----------|
-| 5 friends | Free (+ social debt) | Days | **Instant, diverse, private** |
-| UserTesting.com | $245 (5 users) | Hours | **~$1, minutes** |
-| Hotjar/FullStory | Free tier | Needs traffic | **Works with zero users** |
-| UX consultant | $150-300/hr | Days to book | **Instant sanity check** |
-
-**CrowdTest is not a replacement for real user testing.** It's the only option when you have no users, no budget, and no time. Think of it as a fast, cheap UX sanity check — 60-70% of real user feedback quality at 1% of the cost.
+This is not “one LLM pretending to be 10 users in one chat.”
+This is **orchestrated, persona-specific, browser-based testing**.
 
 ---
 
-## How It Works
+## What CrowdTest Does
 
-```
-┌──────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────┐     ┌────────┐
-│  Scout   │ ──► │  Persona     │ ──► │  Browser     │ ──► │ Feedback │ ──► │ Report │
-│  (check  │     │  Generator   │     │  Sessions    │     │ Aggreg.  │     │        │
-│   page)  │     │  (N users)   │     │  (per user)  │     │ (dedup)  │     │        │
-└──────────┘     └──────────────┘     └─────────────┘     └──────────┘     └────────┘
-```
+CrowdTest is built for situations like:
+- “Test my onboarding flow with 5 different user types.”
+- “Only test the export flow on mobile.”
+- “Act like a skeptical first-time user and see where you get stuck.”
+- “Simulate desktop vs mobile users with different screen sizes.”
+- “Get a harsh UI/UX review, not polite fluff.”
 
-1. **Scout** checks your page loads correctly, detects auth walls and CAPTCHAs
-2. **Persona Generator** creates N diverse users (tech novice → developer, ages 18-65, different goals)
-3. **Browser Sessions** — each persona browses your product using Playwright, logging every action
-4. **Feedback** — each persona reviews their action log and writes grounded, specific feedback
-5. **Report** — issues deduplicated across personas, ranked by severity and consensus
-
-### What makes the feedback useful?
-
-Every piece of feedback is **grounded in action logs** — not opinions pulled from thin air:
-
-```
-❌ "The UI could be improved" (generic slop)
-✅ "When I clicked 'Add to Cart', the button didn't change to confirm
-    the action. I clicked 3 times thinking it was broken. Cart now
-    shows 3 items." (grounded in action log step 7-8)
-```
+The skill is optimized for:
+- web apps
+- landing pages
+- editors and dashboards
+- multi-step user flows
+- focused feature validation
 
 ---
 
-## Example Output
+## Core Model
 
-```
-╔══════════════════════════════════════════════════╗
-║  CrowdTest Report — myapp.com                    ║
-║  10 personas · 89 pages visited · 18 issues      ║
-║  Avg NPS: 5.8  ·  Would pay: 35%                ║
-╠══════════════════════════════════════════════════╣
-║                                                  ║
-║  🔴 CRITICAL (2)                                  ║
-║  ┌─────────────────────────────────────────────┐ ║
-║  │ Signup form rejects valid .co email TLDs    │ ║
-║  │ 7/10 personas affected · Evidence: steps    │ ║
-║  │ 12-14 across 7 sessions                     │ ║
-║  └─────────────────────────────────────────────┘ ║
-║  ┌─────────────────────────────────────────────┐ ║
-║  │ "Start Free" button leads to payment page   │ ║
-║  │ 6/10 personas felt misled                   │ ║
-║  └─────────────────────────────────────────────┘ ║
-║                                                  ║
-║  🟡 HIGH (4)  ·  🟠 MEDIUM (6)  ·  🟢 LOW (6)    ║
-║                                                  ║
-║  📊 Segment Insights                              ║
-║  • Novice users: couldn't find pricing page     ║
-║  • Mobile users: CTA hidden below fold          ║
-║  • Power users: wanted keyboard shortcuts       ║
-╚══════════════════════════════════════════════════╝
-```
+CrowdTest runs in **orchestrator mode**.
+
+### Main agent responsibilities
+The main agent handles:
+- target analysis
+- product understanding
+- persona generation
+- task assignment
+- deciding device + viewport per persona
+- deciding complexity budget per task
+- collecting results
+- final aggregation and reporting
+
+### Sub-agent responsibilities
+Each sub-agent handles:
+- one persona only
+- one isolated worktree
+- one browser session
+- real user-like interactions (`click`, `type`, `drag`, `scroll`)
+- writing structured outputs:
+  - `action-log.json`
+  - `journey.json`
+  - `feedback.json`
 
 ---
 
-## Installation
+## Key Design Principles
 
-CrowdTest follows the [Agent Skills](https://agentskills.io) open standard — works with **15+ AI tools** out of the box.
+### 1. Real interaction, not DOM cheating
+CrowdTest prefers human-like actions:
+- click
+- type
+- drag
+- scroll
 
-### One-line install (any supported agent)
+Sub-agents are instructed **not** to use JavaScript injection to click hidden elements or manipulate the DOM directly.
+If a real user cannot reach something through the visible UI, that is a finding.
 
-```bash
-npx skills add kaikezhang/crowd-test
-```
+### 2. Persona-specific environments
+Each persona includes:
+- device type
+- exact viewport
+- context / motivation
+- behavioral rules
+- task focus
 
-Works with: Claude Code, Cursor, Gemini CLI, VS Code Copilot, OpenCode, Goose, Amp, Junie, and more.
+Examples:
+- desktop laptop `1366×768`
+- desktop 1080p `1920×1080`
+- mobile iPhone `390×844`
+- mobile small phone `375×667`
+- Android `412×915`
+- tablet `820×1180`
 
-### OpenClaw Skill
+The browser is resized to match the persona before testing begins.
 
-```bash
-clawhub install crowd-test
-```
+### 3. Focus Mode
+If the caller specifies a feature to test, CrowdTest switches into **Focus Mode**.
 
-### Requirements
+That means:
+- use the shortest path to reach the target feature
+- skip unrelated pages and flows
+- treat setup steps as prerequisites, not test targets
+- spend the action budget on the requested feature only
 
-- Any AI coding agent with [Playwright MCP](https://playwright.dev/docs/test-agents) support
-- Anthropic API key (Claude Sonnet 4.6+)
+Example:
+- `--focus "export flow"`
+- `--focus "mobile nav, checkout"`
 
----
+### 4. Dynamic budgets by task complexity
+Task limits are chosen by the main agent based on complexity:
 
-## Usage
+| Complexity | Actions | Time |
+|------------|---------|------|
+| Light | 10–20 | 10 min |
+| Standard | 20–40 | 20 min |
+| Deep | 40–60 | 40 min |
 
-### Basic (zero config)
+This prevents simple tasks from wandering forever while still allowing complex flows enough room to finish.
 
-```bash
-crowdtest https://myapp.com
-```
+### 5. Ruthless feedback quality
+CrowdTest is designed to be:
+- direct
+- structured
+- specific
+- actionable
+- intolerant of weak UX
 
-### With options
-
-```bash
-crowdtest https://myapp.com \
-  --personas 20 \
-  --model opus \
-  --audience "e-commerce shoppers" \
-  --output report.md
-```
-
-### Testing auth-protected sites
-
-```bash
-# Export cookies from your browser
-crowdtest https://app.mysite.com --storage-state cookies.json
-```
-
----
-
-## Persona System
-
-CrowdTest doesn't generate random users. It builds a **dimension matrix** to ensure coverage:
-
-| Dimension | Values |
-|-----------|--------|
-| Tech level | Novice → Developer |
-| Purpose | Inferred from your product |
-| Age | 18-65+ |
-| Patience | Low → High |
-| Exploration | Focused → Curious |
-| Device | Desktop / Mobile / Tablet |
-
-Each persona gets **behavioral rules** — not personality adjectives:
-
-```
-✅ "After 3 failed attempts, express frustration and try search"
-✅ "Skip text sections longer than 3 lines"
-✅ "Only use visible buttons and links (no keyboard shortcuts)"
-
-❌ "You are impatient" (LLMs can't act dumb on command)
-```
+The main agent can reference `references/ui-review-prompt.md` to generate harsher, more systematic UI critiques.
 
 ---
 
-## Limitations (Honest)
+## Output Format
 
-| What CrowdTest Can't Do | Why |
-|-------------------------|-----|
-| Replace real user testing | LLMs are rational actors, real users aren't |
-| Evaluate visual design | Sees DOM structure, not colors/layout/whitespace |
-| Test behind CAPTCHAs | No bypass capability |
-| Simulate accessibility | Can't run a screen reader |
-| Test performance/speed | Reports slow loads but can't measure Core Web Vitals |
-| Handle complex SPAs reliably | 50-70% success on SPAs vs 90%+ on static sites |
+Each persona produces three artifacts.
 
-**Position it right**: CrowdTest produces "AI-generated hypotheses about UX issues," not "synthetic user research."
+### `action-log.json`
+A step-by-step record of what the user actually did.
 
----
+Includes things like:
+- action type
+- target element
+- expected outcome
+- actual outcome
+- success/failure
+- emotional state
+- progress
 
-## Cost
+### `journey.json`
+A compressed narrative of the session.
 
-| Personas | Model | Cost | Time |
-|----------|-------|------|------|
-| 5 | Sonnet | ~$0.30 | ~5 min |
-| 10 | Sonnet | ~$0.60 | ~10 min |
-| 20 | Sonnet | ~$1.20 | ~20 min |
-| 10 | Opus | ~$3.00 | ~10 min |
+Includes:
+- confidence curve
+- key moments
+- short first-person story
+- one-line journey summary
 
-For reference: UserTesting.com charges $49 per real human tester.
+### `feedback.json`
+Structured persona feedback.
 
----
+Includes:
+- task completion result
+- prioritized issues
+- positives
+- scoring
+- verdict
 
-## Architecture
-
-See `docs/` for detailed documentation:
-
-- [`docs/PRD.md`](docs/PRD.md) — Product requirements
-- [`docs/technical-design.md`](docs/technical-design.md) — Architecture & data structures
-- [`docs/competitive-research.md`](docs/competitive-research.md) — Competitive analysis
-- [`docs/ceo-review.md`](docs/ceo-review.md) — Product strategy review
-- [`docs/eng-review.md`](docs/eng-review.md) — Engineering feasibility
-- [`docs/roadmap.md`](docs/roadmap.md) — Version milestones
-- [`docs/sprint-plan.md`](docs/sprint-plan.md) — Sprint breakdown
-
----
-
-## Roadmap
-
-- [x] v0.1 — Single persona proof of concept
-- [ ] v0.2 — Scout + Persona Generator + Single-persona loop
-- [ ] v0.3 — Multi-persona + Aggregation + Report
-- [ ] v0.4 — Skill packaging + Self-validation
-- [ ] v1.0 — Public release
+Typical scoring dimensions include:
+- first impression
+- task completion
+- navigation
+- trust
+- error handling
+- visual quality
+- device fit
+- nps
 
 ---
 
-## Contributing
+## Typical Workflow
 
-CrowdTest is open source. PRs welcome.
+### 1. Product understanding
+CrowdTest first figures out:
+- what the product does
+- who it is for
+- what core tasks matter
+- what pages and entry points exist
 
-```bash
-git clone https://github.com/kaikezhang/crowd-test.git
-cd crowd-test
-# Read CLAUDE.md (for Claude Code) or AGENTS.md (for Codex)
-# Check TASK.md for current sprint
+### 2. Persona generation
+It creates personas based on:
+- intended user type
+- task relevance
+- device + viewport
+- emotional context
+- competitor familiarity
+- usage environment
+
+### 3. Task assignment
+Each persona gets:
+- a primary task
+- success criteria
+- optional secondary tasks
+- focus features (if applicable)
+- time/action budget based on complexity
+
+### 4. Sub-agent execution
+For each persona:
+- create isolated worktree
+- write `PERSONA-TASK.md`
+- dispatch sub-agent
+- run real browser session
+- collect output files
+
+### 5. Aggregation
+Main agent deduplicates issues and produces a final report.
+
+---
+
+## Browser / WebGL Notes
+
+CrowdTest often runs in headless or GPU-less environments.
+For browser-heavy apps that require WebGL, CrowdTest works best when Chromium is launched with software rendering enabled.
+
+In this repo’s development/testing environment, this was solved via persistent browser flags in OpenClaw config:
+- `--enable-unsafe-swiftshader`
+- `--use-angle=swiftshader`
+- `--ignore-gpu-blocklist`
+
+This allows WebGL-dependent apps (like map editors) to be tested without a physical GPU.
+
+---
+
+## Repository Layout
+
+```text
+SKILL.md                     # Main CrowdTest skill definition
+README.md                    # This file
+references/
+  ui-review-prompt.md        # Strict UI review reference prompt
+docs/
+  PRD.md
+  technical-design.md
+  roadmap.md
+  ...
 ```
+
+This repo is primarily a **skill + prompt architecture** project, not a traditional application codebase.
+
+---
+
+## Current Status
+
+CrowdTest has evolved from an early single-agent concept into an **orchestrator-first testing skill** with:
+- isolated sub-agent execution
+- worktree-based persona separation
+- real browser interactions
+- speed/focus guardrails
+- focus-mode testing
+- per-persona device simulation
+- stricter structured feedback
+
+---
+
+## What This Repo Is Not
+
+CrowdTest is **not**:
+- a replacement for real user testing
+- a visual diff regression tool
+- a generic screenshot linter
+- a static heuristic checklist only
+
+It is best understood as:
+> a multi-agent synthetic user testing system that creates realistic browser-based task runs and turns them into structured product feedback.
+
+---
+
+## Usage Notes
+
+CrowdTest is intended to be invoked through the host agent system that loads `SKILL.md`.
+The exact command format depends on the host environment (OpenClaw, Claude Code skills, etc.).
+
+Conceptually, inputs look like:
+- target URL
+- number of personas
+- optional focus area(s)
+- optional product context
+- optional known competitors
+- optional auth/storage state
+
+---
+
+## Development Notes
+
+This repo contains planning and design docs used during development.
+Runtime artifacts, temporary reports, VibeFlow state, and exploratory files should generally not be committed unless they are intentionally part of the product.
 
 ---
 
 ## License
 
 MIT
-
----
-
-*Built by [Kaike](https://github.com/kaikezhang) & [晚晚](https://github.com/kaikezhang/crowd-test). Ship fast, test faster.* 🧪
