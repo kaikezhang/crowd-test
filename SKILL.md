@@ -29,40 +29,6 @@ Optional flags:
 /crowd-test https://myapp.com --personas 5 --context "B2B invoicing tool for freelancers" --focus "onboarding flow" --competitors "FreshBooks, Wave"
 ```
 
-## Execution Mode Detection
-
-Before starting the pipeline, determine which execution mode to use. CrowdTest supports two modes:
-
-**Orchestrator Mode** — each persona is tested by an independent sub-agent with its own browser:
-- If `sessions_spawn` tool is available → use OpenClaw native dispatch
-- Else if `codex` CLI is on PATH → use Codex CLI dispatch
-- Else if `claude` CLI is on PATH → use Claude Code CLI dispatch
-
-**Legacy Mode** — single agent runs all personas inline (original behavior):
-- If none of the above orchestrator capabilities are detected → Legacy Mode
-
-**User override**: The `--mode` flag forces a specific mode:
-```
-/crowd-test https://myapp.com --mode orchestrator
-/crowd-test https://myapp.com --mode legacy
-```
-
-**Detection logic** (run this at the start, before Phase 1):
-```
-1. If --mode flag is set → use that mode
-2. Else if sessions_spawn tool exists → Orchestrator Mode
-3. Else if `which codex` succeeds → Orchestrator Mode
-4. Else if `which claude` succeeds → Orchestrator Mode
-5. Else → Legacy Mode
-```
-
-Announce the detected mode before proceeding:
-- Orchestrator: "🤖 CrowdTest running in Orchestrator Mode — each persona gets an independent agent + browser"
-- Legacy: "🔄 CrowdTest running in Legacy Mode — single agent, serial execution"
-
-The rest of this document uses **[ORCHESTRATOR]** and **[LEGACY]** tags to mark mode-specific instructions. Sections without tags apply to both modes.
-
----
 
 ## How It Works
 
@@ -82,11 +48,7 @@ Phase 8: Delta Analysis     → Compare with previous run if exists
 
 **Execution order**: Phase 1 runs first (Scout needs raw browser data), then Phase 0 analyzes what Scout found. The numbering reflects conceptual priority — understanding the product (Phase 0) is foundational — but Scout must run first to gather the data.
 
-**Mode differences**:
-- **Phases 0-3**: Identical in both modes (main agent executes)
-- **Phases 4-6 [ORCHESTRATOR]**: Main agent dispatches one sub-agent per persona. Each sub-agent opens its own browser, runs the E2E test, and writes structured JSON output. Serial execution — one persona at a time.
-- **Phases 4-6 [LEGACY]**: Single agent runs all personas inline (current behavior, unchanged)
-- **Phases 7-8**: Identical in both modes (main agent aggregates results)
+**Execution model**: The main agent (orchestrator) runs Phases 0-3 and 7-8 directly. For Phases 4-6, the main agent dispatches one **independent sub-agent per persona**, each with its own browser. Sub-agents run serially — one persona at a time. Each sub-agent performs real E2E browser testing via Playwright and writes structured JSON output.
 
 ---
 
@@ -730,9 +692,9 @@ Before proceeding to Phase 4, verify:
 
 ---
 
-## [ORCHESTRATOR MODE] Persona Test Package
+## Persona Test Package
 
-> **Purpose**: In Orchestrator Mode, the main agent does NOT directly play every persona. Instead, it prepares a self-contained test package for a sub-agent, sends that sub-agent into an isolated worktree, and has the sub-agent perform real E2E testing with a fresh browser context.
+> **Purpose**: The main agent does NOT directly play every persona. Instead, it prepares a self-contained test package for a sub-agent, dispatches that sub-agent into an isolated worktree, and has the sub-agent perform real E2E testing with a fresh browser context.
 
 For each persona, the main agent MUST write a `PERSONA-TASK.md` file in the persona worktree containing all required context.
 
@@ -791,6 +753,66 @@ For each persona, the main agent MUST write a `PERSONA-TASK.md` file in the pers
 - Track emotional state after every action
 - Use accessibility snapshots as the primary observation method
 - If you encounter an already-known issue, you may note it, but prioritize discovering NEW issues or new evidence
+
+## How to Test (Detailed E2E Instructions)
+
+### State Machine
+INIT → NAVIGATE → ORIENT → ACT ⟷ OBSERVE → DECIDE → DONE
+
+### INIT
+Set viewport by device type. Initialize action_count=0, consecutive_failures=0.
+
+### NAVIGATE
+Go to entry_point URL. If cookie banner appears, dismiss it. If navigation fails, retry once.
+
+### ORIENT → ACT → OBSERVE → DECIDE (loop)
+For each action:
+1. **ORIENT**: Take accessibility snapshot, understand current page
+2. **ACT**: Perform ONE action (click/type/scroll/navigate_back/done)
+3. **OBSERVE**: Compare before/after snapshots. If action failed, try ONE recovery (scroll, parent element, keyboard, alternative path)
+4. **DECIDE**: Continue or stop based on circuit breakers
+
+After each action, report emotional state and log to action-log.
+
+### Circuit Breakers
+- Max 20 actions → force DONE
+- Max 3 minutes → force DONE
+- 5 consecutive failures → force DONE, mark FAILED
+
+### Emotional States
+confident(8) / neutral(6) / confused(4) / frustrated(2) / ready_to_leave(1)
+
+When you become confused/frustrated, log a confusion_event:
+{"step": N, "expected": "...", "got": "...", "gap": "..."}
+
+## After Testing: Journey Reconstruction (journey.json)
+
+1. **Key moments**: Tag significant events as positive/confusion/recovery/abandonment/delight
+2. **Confidence curve**: Map emotional states to numbers [8,6,4,2,1] — one per action
+3. **Narrative**: Write 3-5 sentences AS your persona in first person, referencing specific pages/elements
+4. **Summary**: One-line arc using → arrows
+
+## After Testing: Feedback Synthesis (feedback.json)
+
+### Phase B: In-Character Review
+Review your own action log and write honest feedback:
+- **First impression** (first 3 actions only)
+- **What worked well** (with step references)
+- **What didn't work** (with step, page, element, expected vs actual)
+- **Task completion assessment** (in your own words)
+
+### Phase C: Structured Extraction
+Extract from your narrative:
+- **Issues**: tier(1-3), type, page, element, severity, evidence steps, suggested_fix
+- **Positives**: feature, evidence steps, why it worked
+- **Scores**: first_impression, task_completion, navigation, trust, error_handling, nps (0-10)
+- **Verdict**: would_pay, would_return, one_line_verdict
+
+### Canary Self-Validation
+Before saving feedback.json:
+1. Could any issue apply to ANY product? If yes → rewrite with specific evidence
+2. Does every issue reference action log steps? If no → add evidence
+3. Does one_line_verdict mention this specific product? If no → rewrite
 
 ## Required Output Files
 Write these files in the current worktree before exiting:
@@ -891,247 +913,10 @@ Write these files in the current worktree before exiting:
 }
 ```
 
----
 
-## [LEGACY MODE] Phase 4: Browser Sessions
+## Multi-Persona Orchestration
 
-> **Purpose**: The core testing phase. The LLM embodies a persona and browses the product, executing their assigned task while tracking emotional state and logging every action. This produces the ground truth action log that all feedback is built on.
-
-> **Input**: One Persona (from Phase 2) + their TaskAssignment (from Phase 3) + SiteMap (from Phase 1)
-> **Output**: EnhancedActionLog (one per persona)
-> **Tools used**: `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type`, `browser_scroll`, `browser_resize`
-> **Execution**: Run ONE persona at a time, sequentially. After each persona completes, pass their `confusion_events` to the next persona via the action prompt (see "covered issues" below).
-
-### State Machine
-
-```
-INIT → NAVIGATE → ORIENT → ACT ⟷ OBSERVE → DECIDE → DONE
-```
-
-Each persona's session follows this state machine. The loop is: ORIENT → ACT → OBSERVE → DECIDE → (back to ORIENT or DONE).
-
-### Step 1: INIT — Set up browser context
-
-Configure the browser viewport based on the persona's device:
-
-- If `persona.device === "mobile"`: call `browser_resize` with width=375, height=812 (iPhone viewport)
-- If `persona.device === "tablet"`: call `browser_resize` with width=768, height=1024 (iPad viewport)
-- If `persona.device === "desktop"`: keep the default viewport (no resize needed)
-
-Initialize tracking variables:
-- `action_count = 0`
-- `consecutive_failures = 0`
-- `start_time = now()`
-- `actions = []` (the action log array)
-- `emotional_arc = []` (tracks emotional state over time)
-- `pages_visited = []`
-- `confusion_events = []`
-
-### Step 2: NAVIGATE — Go to entry point
-
-Call `browser_navigate` with the persona's `entry_point` URL (resolved against the product's base URL).
-
-- If `persona.entry_point` is a relative path like `/pricing`, resolve it: `{product_url}{entry_point}`
-- If the SiteMap recorded `cookie_banner: true`, be ready to dismiss the cookie banner using the same logic as Phase 1 Step 4b.
-- Wait for page load.
-- Add the entry point URL to `pages_visited`.
-
-If navigation fails:
-1. Retry once after 3 seconds.
-2. If retry also fails, mark the session as `"task_result": "ERROR"` with `"failure_reason": "Could not load entry point"` and proceed to the next persona.
-
-### Step 3: ORIENT — Observe and plan
-
-Call `browser_snapshot` to get the current page's accessibility tree.
-
-This is where the LLM thinks IN CHARACTER as the persona. Using the action prompt (see below), the LLM:
-1. Reads the accessibility snapshot
-2. Considers the persona's task and behavioral rules
-3. Decides what action to take next
-4. Reports their emotional state
-
-### Step 4: ACT — Execute one action
-
-Based on the action prompt response, execute exactly ONE browser action:
-
-| Action Type | Browser Tool | Details |
-|-------------|-------------|---------|
-| `click` | `browser_click` | Click the element described in `target` |
-| `type` | `browser_type` | Type `text` into the element described in `target` |
-| `scroll` | `browser_scroll` | Scroll down to reveal more content |
-| `navigate_back` | `browser_navigate` | Go back to the previous page |
-| `done` | (none) | Persona has decided to stop |
-
-After executing the action:
-- Wait 500ms for the page to respond.
-- Call `browser_snapshot` to capture the new state.
-- Increment `action_count`.
-- Track the current page URL — if it changed, add the new URL to `pages_visited`.
-
-### Step 5: OBSERVE — Check if action worked
-
-Compare the before and after snapshots:
-
-- **Action succeeded**: The snapshot changed in a way consistent with the expected outcome.
-  - Reset `consecutive_failures = 0`.
-  - Log the action with `"success": true`.
-
-- **Action failed**: The snapshot is unchanged or changed unexpectedly.
-  - Increment `consecutive_failures`.
-  - Log the action with `"success": false`.
-  - Enter **RECOVER mode**:
-
-#### RECOVER mode
-
-When an action fails, try these recovery strategies in order:
-1. **Scroll to reveal**: The target element may be off-screen. Call `browser_scroll` to scroll down, then retry.
-2. **Try parent element**: The clickable area may be on a parent element. Look for a containing link or button.
-3. **Use keyboard**: Try pressing Enter or Tab to interact with the focused element.
-4. **Try alternative path**: Look for a different element that achieves the same goal.
-
-Only attempt ONE recovery strategy per failed action. Log the recovery attempt as a separate action.
-
-### Step 6: DECIDE — Continue or stop?
-
-After each action-observe cycle, check the stopping conditions:
-
-**Continue if ALL are true**:
-- `action_count < 20` (max actions not reached)
-- Elapsed time < 3 minutes (max time not reached)
-- `consecutive_failures < 5` (not stuck in a failure loop)
-- Task is not yet complete
-- Persona has not decided to abandon (via `done` action)
-
-**Stop (DONE) if ANY are true**:
-- Task completed successfully → `task_result = "COMPLETED"`
-- `action_count >= 20` → `task_result` based on progress, `failure_reason = "Max actions reached"`
-- Elapsed time >= 3 minutes → `task_result` based on progress, `failure_reason = "Time limit reached"`
-- `consecutive_failures >= 5` → `task_result = "FAILED"`, `failure_reason = "Session unstable — 5 consecutive failures"`, mark session as unstable
-- Persona chose `done` action → `task_result` based on their assessment
-
-When stopping, determine `task_result`:
-- `"COMPLETED"` — success criteria fully met
-- `"PARTIALLY_COMPLETED"` — meaningful progress was made but task not finished
-- `"FAILED"` — could not accomplish the task
-
-### Step 7: Emotional tracking
-
-After EVERY action, the persona reports their emotional state. This is captured in the action prompt response and logged in both the individual action and the `emotional_arc` array.
-
-Valid emotional states:
-| State | Meaning | Triggers |
-|-------|---------|----------|
-| `confident` | "I know what to do next" | Clear UI, successful actions, obvious next step |
-| `neutral` | "This is fine" | Default state, nothing remarkable |
-| `confused` | "I don't understand what happened" | Unexpected result, unclear labels, no obvious path |
-| `frustrated` | "This isn't working" | Multiple failures, confusing flow, broken elements |
-| `ready_to_leave` | "I'm about to give up" | Extended confusion, no progress, trust broken |
-
-When emotional state transitions to `confused` or `frustrated`, log a confusion event:
-```json
-{
-  "step": 7,
-  "expected": "New invoice form",
-  "got": "Settings dropdown",
-  "gap": "'+' icon is ambiguous — could mean 'add new' or 'more options'"
-}
-```
-
-### Action Prompt Template
-
-This is the EXACT prompt structure the LLM sees for each action step. The variables in `{braces}` are filled from the persona, task, and session state:
-
-```
-System: You are {persona.narrative}
-
-BEHAVIORAL RULES (you MUST follow these):
-{persona.behavioral_rules — listed as numbered items}
-
-You are testing {product_url}. Your task: {task.primary_task}
-Success criteria: {task.success_criteria}
-
-Current page snapshot:
-{accessibility_snapshot}
-
-Your action history (last 5 steps):
-{recent_actions_summary — step number, action type, target, success, emotional_state}
-
-Issues already found by OTHER testers (find DIFFERENT ones):
-{covered_issues_from_previous_personas — list of confusion_events from earlier personas, or "None yet" for the first persona}
-
-Task progress: {task_progress_estimate — from the last action, or "0%" at start}
-Actions remaining: {20 - action_count}
-
-What do you do next? Think in character, then respond as JSON:
-{
-  "thinking": "your in-character thought process — what you see, what you're looking for, how you feel",
-  "action": "click|type|scroll|navigate_back|done",
-  "target": "exact element description from the snapshot above",
-  "text": "(for type action only — the text to type)",
-  "emotional_state": "confident|neutral|confused|frustrated|ready_to_leave",
-  "task_progress": "0-100% estimate of how close you are to completing the task"
-}
-```
-
-**Important notes on the action prompt**:
-- `{recent_actions_summary}` shows only the LAST 5 actions to keep context window manageable. Include step number, action type, target, whether it succeeded, and the persona's emotional state at that step.
-- `{covered_issues_from_previous_personas}` is the cumulative diversity mechanism. After each persona completes, their `confusion_events` are added to this list. This prevents all personas from reporting the same obvious issue and encourages discovering different problems.
-- For the FIRST persona in the run, `covered_issues_from_previous_personas` is "None yet — you are the first tester."
-
-### Circuit Breakers (hard stops)
-
-These are NON-NEGOTIABLE limits that force the session to end:
-
-| Breaker | Threshold | Action |
-|---------|-----------|--------|
-| Max actions | 20 actions | Force DONE, assess task_result based on progress |
-| Max time | 3 minutes | Force DONE, assess task_result based on progress |
-| Consecutive failures | 5 in a row | Force DONE, mark `task_result = "FAILED"`, flag session as unstable |
-
-### Output: EnhancedActionLog
-
-After the session ends, produce the following JSON:
-
-```json
-{
-  "persona_id": "persona_001",
-  "entry_point": "/",
-  "actions": [
-    {
-      "step": 1,
-      "type": "click",
-      "target": "hero CTA 'Get Started Free'",
-      "expected": "Signup page",
-      "actual": "Redirected to /signup with email form",
-      "success": true,
-      "emotional_state": "confident",
-      "task_progress": "10%",
-      "notes": "Good, clear CTA. Exactly what I expected."
-    }
-  ],
-  "emotional_arc": ["confident", "confident", "neutral", "confused", "frustrated"],
-  "task_result": "FAILED",
-  "task_progress": "20%",
-  "failure_reason": "Could not find invoice creation feature after 14 actions",
-  "pages_visited": ["/", "/signup", "/dashboard"],
-  "total_actions": 14,
-  "duration_estimate": "~2.5 minutes",
-  "confusion_events": [
-    {
-      "step": 7,
-      "expected": "New invoice form",
-      "got": "Settings dropdown",
-      "gap": "'+' icon is ambiguous"
-    }
-  ]
-}
-```
-
----
-
-## [ORCHESTRATOR MODE] Multi-Persona Orchestration
-
-> **Purpose**: In Orchestrator Mode, the main agent runs one persona at a time by dispatching a sub-agent into an isolated git worktree. The sub-agent performs the actual E2E browser session and writes structured JSON output files. This preserves persona isolation while staying serial and resource-safe.
+> **Purpose**: The main agent runs one persona at a time by dispatching a sub-agent into an isolated git worktree. The sub-agent performs the actual E2E browser session and writes structured JSON output files. This preserves persona isolation while staying serial and resource-safe.
 
 > **Input**: PersonaTaskMatrix + SiteMap + ProductProfile
 > **Output**: All `action-log.json`, `journey.json`, and `feedback.json` outputs collected across personas
@@ -1208,433 +993,27 @@ Persona {persona_index}/{N}: {name} ({archetype}, {device})
 
 ---
 
-## [LEGACY MODE] Multi-Persona Orchestration
+## Phase 5: Journey Reconstruction
 
-> **Purpose**: Run N personas sequentially through Phases 4→5→6, with cumulative diversity, error isolation, and progress reporting. This is the loop that wraps individual persona execution.
-
-> **Input**: PersonaTaskMatrix (from Phase 3) + SiteMap (from Phase 1) + ProductProfile (from Phase 0)
-> **Output**: All EnhancedActionLog[], JourneyNarrative[], PersonaFeedback[] collected across personas
-> **Execution**: Sequential — one persona at a time
-
-### Orchestration Loop
-
-After Phase 3 produces the PersonaTaskMatrix, process each persona one at a time:
-
-```
-Initialize:
-  completed_personas = []
-  failed_personas = []
-  all_action_logs = []
-  all_journeys = []
-  all_feedback = []
-  cumulative_covered_issues = []
-
-For persona_index = 1 to N:
-  persona = personas[persona_index]
-  task = tasks[persona_index]
-
-  1. Run Phase 4 (Browser Session) for this persona
-     - Pass cumulative_covered_issues to the browser session prompt
-       so this persona explores NEW areas rather than re-discovering known issues
-     - If Phase 4 FAILS (page crash, CAPTCHA, timeout, 5 consecutive failures):
-       → Log the failure: { persona_id, persona_name, archetype, failure_reason }
-       → Add to failed_personas
-       → Output: "❌ Persona {persona_index}/{N}: {name} ({archetype}) — FAILED: {reason}"
-       → SKIP to next persona (do NOT abort the run)
-       → Continue
-
-  2. Run Phase 5 (Journey Reconstruction) for this persona
-     - Input: the EnhancedActionLog just produced
-     - Output: JourneyNarrative
-
-  3. Run Phase 6 (Feedback Synthesis) for this persona
-     - Input: Persona + EnhancedActionLog + TaskAssignment
-     - Output: PersonaFeedback
-
-  4. Collect results:
-     - Append EnhancedActionLog to all_action_logs
-     - Append JourneyNarrative to all_journeys
-     - Append PersonaFeedback to all_feedback
-     - Add to completed_personas
-
-  5. Update cumulative diversity:
-     - Extract all issue IDs from this persona's PersonaFeedback.issues[]
-     - Append to cumulative_covered_issues
-     - This ensures the NEXT persona's Phase 4 prompt includes:
-       "Previous personas already identified these issues: {cumulative_covered_issues}.
-        Focus on discovering NEW issues, different pages, or different interaction patterns."
-
-  6. Report progress:
-     Output the following after each persona completes:
-
-     Persona {persona_index}/{N}: {name} ({archetype}, {device})
-       ├── Task: "{task_description}" → {result_emoji} {task_result}
-       ├── Issues found: {issue_count} ({critical_count} critical)
-       └── Emotional arc: {emotional_arc_summary}
-
-     Where:
-       result_emoji = ✅ if COMPLETED, ⚠️ if PARTIALLY_COMPLETED, ❌ if FAILED
-       emotional_arc_summary = first_state → middle_state → final_state
-         (pick the emotional_state at steps 1, midpoint, and last)
-```
-
-### Error Isolation Rules
-
-- A failed persona does NOT abort the entire run
-- Minimum viable run: at least 1 persona must complete successfully
-- If ALL personas fail, skip Phase 7 aggregation and output an error report:
-  "All {N} personas failed. The site may be untestable. Failures: {failure_summary}"
-- Failed personas are listed in the final report under a "Failed Sessions" section
-
-### Cumulative Diversity
-
-This is CRITICAL for report quality. Without it, 10 personas report the same 3 issues.
-
-The `cumulative_covered_issues` list grows after each persona. Pass it to the next persona's Phase 4 browser session as part of the persona prompt:
-
-```
-"Issues already discovered by previous testers:
-- {issue_1_title}: {issue_1_brief_description}
-- {issue_2_title}: {issue_2_brief_description}
-
-You should STILL note these issues if you encounter them, but prioritize exploring
-different pages, flows, and interaction patterns to find NEW issues."
-```
-
-The persona should still record already-known issues if encountered (for cross-validation), but should actively seek unexplored areas.
-
-### After All Personas Complete
-
-Once all personas have been processed:
-
-1. Output a summary:
-   ```
-   ══════════════════════════════════════
-   CrowdTest Session Complete
-   ✅ Completed: {completed_count}/{N}
-   ❌ Failed: {failed_count}/{N}
-   📋 Total issues found: {total_unique_issues}
-   ══════════════════════════════════════
-   ```
-
-2. Proceed to Phase 7 (Aggregation) with:
-   - all_action_logs
-   - all_journeys
-   - all_feedback
-   - failed_personas (for inclusion in report)
-
----
-
-## [ORCHESTRATOR MODE] Phase 5: Journey Reconstruction
-
-In Orchestrator Mode, Phase 5 is executed **inside the sub-agent session**. The sub-agent reads its own action log, reconstructs the confidence curve and key moments, and writes the result to `journey.json`.
+Phase 5 is executed **inside the sub-agent session**. The sub-agent reads its own action log, reconstructs the confidence curve and key moments, and writes the result to `journey.json`.
 
 The main agent does **not** regenerate the journey inline. It simply reads `journey.json`, validates that it exists, and includes it in Phase 7 aggregation.
 
 ---
 
-## [LEGACY MODE] Phase 5: Journey Reconstruction
+## Phase 6: Feedback Synthesis
 
-> **Purpose**: Turn a flat action log into a STORY with emotional arc, confidence curve, and key moments. This is what makes the report engaging — founders empathize with stories, not bullet lists.
-
-> **Input**: EnhancedActionLog (from Phase 4) for one persona
-> **Output**: JourneyNarrative
-> **Tools used**: None (pure LLM reasoning over session data)
-
-### Step 1: Identify Key Moments
-
-Scan the EnhancedActionLog and tag each significant event with a moment type:
-
-| Moment Type | Trigger | Example |
-|-------------|---------|---------|
-| `positive` | Something worked well or surprised the persona positively | "Landing page clearly explains the product" |
-| `confusion` | emotional_state changed to "confused" or "frustrated" | "'+' button opened settings, not new invoice" |
-| `recovery` | After confusion, persona got back on track | "Found create action through search bar" |
-| `abandonment` | Persona gave up on the task or a sub-task | "Gave up finding pricing, moved to signup instead" |
-| `delight` | An "aha" moment, unexpectedly good experience | "Auto-filled company info from domain — saved 30 seconds" |
-
-Rules for moment identification:
-- Every confusion_event from the action log MUST become a `confusion` key moment
-- If a confusion is followed (within 3 steps) by successful completion of that sub-goal → also add a `recovery` moment
-- If the persona's emotional_state reaches "ready_to_leave" → add an `abandonment` moment
-- Positive moments come from: successful first attempts, fast completions, persona notes expressing approval
-
-### Step 2: Build the Confidence Curve
-
-Map the emotional_state at each action step to a numeric value:
-
-| emotional_state | value |
-|----------------|-------|
-| confident | 8 |
-| neutral | 6 |
-| confused | 4 |
-| frustrated | 2 |
-| ready_to_leave | 1 |
-
-Produce an array of integers — one per action in the log. Example: `[8, 8, 6, 4, 2, 2, 4, 6, 8]`
-
-### Step 3: Write First-Person Journey Narrative
-
-Write a 3-5 sentence narrative AS the persona, in their voice:
-- Use first person ("I opened...", "I expected...", "I couldn't find...")
-- Reference specific pages and UI elements by name
-- Include at least one "I expected X but got Y" moment (from confusion_events)
-- If the persona has competitor_experience, include a comparison: "On {competitor}, this was easier because..."
-- Match the persona's tech_comfort_level in vocabulary:
-  - Low tech comfort → simple, non-technical language
-  - High tech comfort → may reference UX patterns, conventions
-
-### Step 4: Generate Journey Summary
-
-Write a one-line summary of the arc using → arrows:
-- Format: "{start_state} → {middle_event} → {end_state}"
-- Example: "Good first impression → confusion at core task → partial recovery via search"
-
-### Output: JourneyNarrative
-
-```json
-{
-  "persona_id": "persona_001",
-  "confidence_curve": [8, 8, 6, 4, 2, 2, 4, 6, 8],
-  "key_moments": [
-    {"type": "positive", "step": 1, "description": "Landing page clearly explains the product"},
-    {"type": "confusion", "step": 7, "description": "'+' button opened settings, not new invoice"},
-    {"type": "recovery", "step": 10, "description": "Found create action through search"}
-  ],
-  "narrative": "I opened the site on my phone and immediately understood what it does — 'Send professional invoices in 30 seconds.' The signup was quick, just email and password. But the dashboard threw me — where do I create an invoice? The '+' icon opened settings, not creation. On Wave, there's a big green 'Create Invoice' button right there. I eventually found it through the search bar, but it shouldn't be that hard.",
-  "journey_summary": "Good first impression → confusion at core task → partial recovery via search"
-}
-```
-
-### Self-Validation
-
-Before finalizing the JourneyNarrative, check:
-- [ ] confidence_curve length matches the number of actions in the action log
-- [ ] Every confusion_event from the action log is represented in key_moments
-- [ ] Narrative references at least one specific page or UI element by name
-- [ ] Narrative is written in first person, in the persona's voice
-- [ ] Journey summary accurately reflects the confidence curve shape
-
-If any check fails, revise before outputting.
-
----
-
-## [ORCHESTRATOR MODE] Phase 6: Feedback Synthesis
-
-In Orchestrator Mode, Phase 6 is executed **inside the sub-agent session**. The sub-agent transforms its own grounded session data into structured feedback and writes the result to `feedback.json`.
+Phase 6 is executed **inside the sub-agent session**. The sub-agent transforms its own grounded session data into structured feedback and writes the result to `feedback.json`.
 
 The main agent does **not** regenerate feedback inline. It reads `feedback.json`, validates that required fields are present, and passes the collected PersonaFeedback objects into Phase 7.
 
 ---
 
-## [LEGACY MODE] Phase 6: Feedback Synthesis
-
-> **Purpose**: Transform the raw action log into grounded, evidence-linked feedback. This is a THREE-PHASE process that ensures feedback is specific to THIS product and references actual events from the browsing session. Generic feedback like "the UI could be improved" is a failure mode this phase is designed to prevent.
-
-> **Input**: Persona (from Phase 2) + EnhancedActionLog (from Phase 4) + TaskAssignment (from Phase 3)
-> **Output**: PersonaFeedback JSON
-> **Tools used**: None (pure LLM reasoning over session data)
-
-### Phase A: Ground Truth (already exists)
-
-The EnhancedActionLog from Phase 4 IS the ground truth. It contains:
-- Every action taken, with success/failure status
-- Emotional state at each step
-- Confusion events with expected vs actual outcomes
-- Task completion result
-- Pages visited
-
-**Do not modify or reinterpret the action log.** Phase A is already complete when Phase 6 begins.
-
-### Phase B: In-Character Feedback Review
-
-Give the persona their COMPLETE action log and task assignment. Ask them to write honest feedback AS THEIR CHARACTER — in first person, using their voice, referencing their specific experience.
-
-The persona must address ALL of the following:
-
-#### B1: First Impression (first 30 seconds / first 3 actions ONLY)
-
-What did the persona think in their first 30 seconds on the site? This is based ONLY on the first 3 actions in the action log. Do not let later experience color the first impression.
-
-Questions to answer:
-- "Did I immediately understand what this product does?"
-- "Did I know what to do next?"
-- "Did the page feel trustworthy and professional?"
-
-#### B2: What Worked Well (with evidence)
-
-List things that went smoothly during the session. Each positive MUST reference a specific action log step or page:
-- "The signup flow was fast — I completed it in 3 steps (steps 2-4)"
-- "Search worked perfectly — found what I needed instantly (step 11)"
-
-If nothing went well, say so honestly: "Nothing stood out as particularly smooth."
-
-#### B3: What Didn't Work (with evidence)
-
-List every friction point, confusion, and failure. Each issue MUST:
-- Reference a specific action log step number
-- Name the specific page and element involved
-- Describe what was expected vs what happened
-- Be specific enough that a developer could reproduce the issue
-
-```
-GOOD: "On /dashboard (step 7), I clicked the '+' icon expecting a 'New Invoice' form, but it opened a Settings dropdown. The icon is ambiguous."
-BAD: "The dashboard was confusing." ← REJECT THIS
-```
-
-#### B4: Task Completion Assessment
-
-In the persona's own words:
-- Did they complete their task? Why or why not?
-- How much effort did it take?
-- Would they try again or give up?
-
-#### B5: Comparative Observations (Switcher personas only)
-
-If the persona has `competitors_used`, they MUST compare their experience:
-- "In FreshBooks, creating an invoice is a single 'New Invoice' button on the dashboard. Here, I couldn't find it at all."
-- "The signup was faster than Wave — Wave requires email verification first."
-
-For non-Switcher personas, skip this section.
-
-#### B6: Scores and Verdict
-
-The persona provides:
-- `would_pay`: boolean — would they pay for this product?
-- `would_return`: `"yes"`, `"maybe"`, or `"no"` — would they come back?
-- `one_line_verdict`: A single sentence summary of their experience
-
-### Phase C: Structured Extraction
-
-Extract structured JSON from the Phase B narrative. This is a SEPARATE step — do not combine it with Phase B. Read the narrative and extract:
-
-#### C1: Tiered Issues
-
-Classify each issue into a tier:
-
-| Tier | Name | Definition | Example |
-|------|------|-----------|---------|
-| 1 | **BLOCKING** | Prevents task completion entirely | "Cannot find the core feature" |
-| 2 | **FRICTION** | Slows the user down or causes confusion but doesn't block | "Ambiguous icon, had to try 3 things" |
-| 3 | **OBSERVATION** | Minor annoyance or suggestion | "Footer links are hard to read" |
-
-Each issue must include:
-- `tier`: 1, 2, or 3
-- `type`: classify as one of: `discoverability`, `usability`, `performance`, `trust`, `accessibility`, `content`, `navigation`, `error_handling`, `visual`, `other`
-- `page`: the URL path where the issue occurred
-- `element`: the specific UI element involved
-- `issue`: clear description of the problem
-- `severity`: `critical`, `high`, `medium`, or `low`
-- `evidence`: reference to specific action log steps (e.g., "Steps 7-14: exhaustive search of dashboard UI")
-- `suggested_fix`: a concrete suggestion for how to fix it
-
-#### C2: Absence Observations
-
-Things the persona expected to find but did NOT exist. These are valuable because they reveal unmet expectations:
-- "No onboarding wizard for first-time users"
-- "No tooltip explaining the '+' button"
-- "No keyboard shortcuts visible"
-- "No way to undo the last action"
-
-#### C3: Positives (structured)
-
-Each positive observation as a structured object:
-- `feature`: what worked well
-- `evidence`: reference to action log steps
-- `why`: why it was good (be specific)
-
-#### C4: Scores
-
-Rate the product on these 6 dimensions (0-10 scale):
-
-| Dimension | What It Measures |
-|-----------|-----------------|
-| `first_impression` | Clarity, professionalism, and immediate understanding in first 30 seconds |
-| `task_completion` | How well the product enabled the persona's specific task |
-| `navigation` | Ease of finding things, information architecture, menu clarity |
-| `trust` | Social proof, security signals, pricing transparency, professional design |
-| `error_handling` | How the product responds to mistakes, dead ends, and confusion |
-| `nps` | Net Promoter Score (0-10): "How likely to recommend to a colleague?" |
-
-### Canary Self-Validation
-
-After generating the complete PersonaFeedback, run these checks:
-
-**Check 1 — Specificity**: "Could this feedback apply to ANY product, or is it specific to THIS product?"
-- Read each issue. If an issue could be copy-pasted into feedback for a completely different product without changing any words, it is **generic slop**.
-- Examples of generic slop: "The UI could be improved", "Navigation was confusing", "The design feels dated"
-- If ANY issue is generic → **regenerate that issue** with a specific reference to the action log.
-
-**Check 2 — Evidence grounding**: "Does every issue reference a specific action log step, page, and element?"
-- Every issue in the `issues` array MUST have a non-empty `evidence` field that references specific step numbers.
-- If any issue lacks evidence → **reject it and rewrite** with proper evidence pointers.
-
-**Check 3 — Product specificity**: Read the `one_line_verdict`. Does it mention the product's actual functionality or a specific experience? "Useful product" = FAIL. "Great invoicing tool hidden behind a discoverability problem on the dashboard" = PASS.
-
-If regeneration is needed, regenerate ONCE. If the regenerated version still fails the canary checks, keep it but add `"canary_flag": true` to the output to signal that this feedback may be lower quality.
-
-### Output: PersonaFeedback
-
-```json
-{
-  "persona_id": "persona_001",
-  "first_impression": "Landing page clearly explains what this does — send invoices. But on the dashboard, I was completely lost.",
-  "task_completion": {
-    "task": "Create and send an invoice for $500 to Acme Corp",
-    "result": "FAILED",
-    "steps_taken": 14,
-    "failure_reason": "Could not find invoice creation entry point on dashboard"
-  },
-  "issues": [
-    {
-      "tier": 1,
-      "type": "discoverability",
-      "page": "/dashboard",
-      "element": "Invoice creation entry point",
-      "issue": "No visible 'Create Invoice' action on the dashboard. The '+' button opens settings, not creation.",
-      "severity": "critical",
-      "evidence": "Steps 7-14: exhaustive search of dashboard UI, tried '+' button (step 7), hamburger menu (step 9), sidebar links (steps 11-12)",
-      "suggested_fix": "Add a prominent 'Create Invoice' button to the dashboard"
-    }
-  ],
-  "absence_observations": [
-    "No onboarding wizard for first-time users",
-    "No tooltip explaining the '+' button",
-    "No keyboard shortcuts visible"
-  ],
-  "positives": [
-    {
-      "feature": "Signup flow",
-      "evidence": "Steps 2-4: completed signup in ~40 seconds",
-      "why": "Minimal fields, clear labels, no unnecessary verification"
-    }
-  ],
-  "comparative_feedback": [
-    "Wave has a large 'Create Invoice' button on the dashboard — this product should too"
-  ],
-  "scores": {
-    "first_impression": 8,
-    "task_completion": 2,
-    "navigation": 4,
-    "trust": 7,
-    "error_handling": 3,
-    "nps": 4
-  },
-  "would_pay": false,
-  "would_return": "maybe",
-  "one_line_verdict": "Great product hidden behind a discoverability problem"
-}
-```
-
----
-
 ## Phase 7: Aggregation + Scoring + Report
 
-**Input notes by mode**:
-- **[LEGACY]** The main agent already has all persona outputs in memory from inline execution of Phases 4-6.
-- **[ORCHESTRATOR]** The main agent reads `action-log.json`, `journey.json`, and `feedback.json` from each persona worktree (or from copied-in-memory equivalents after collection).
+**Input**: The main agent reads `action-log.json`, `journey.json`, and `feedback.json` from each persona's worktree (collected during the Multi-Persona Orchestration loop).
 
-Both modes MUST normalize into the same three structures before aggregation:
+Normalize into the same three structures before aggregation:
 - `EnhancedActionLog[]`
 - `JourneyNarrative[]`
 - `PersonaFeedback[]`
@@ -1992,7 +1371,7 @@ Re-save the report file with the delta section appended.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `personas` | 10 | Number of personas to generate |
-| `mode` | auto | Execution mode: `auto`, `orchestrator`, or `legacy` |
+
 | `model` | sonnet | LLM model (sonnet / opus) |
 | `context` | (none) | Product description to improve analysis |
 | `focus` | (none) | Specific area to focus testing on |
@@ -2025,9 +1404,7 @@ Re-save the report file with the delta section appended.
 | 10 | ~$0.60 | ~$3.00 |
 | 20 | ~$1.20 | ~$6.00 |
 
-**Mode note**:
-- **Legacy Mode**: cost is mostly the main agent's browser + reasoning tokens
-- **Orchestrator Mode**: each persona also consumes sub-agent tokens (Codex / Claude Code), so total cost is higher but testing is more isolated and more realistic
+**Note**: Each persona consumes sub-agent tokens (Codex / Claude Code) in addition to the main agent's orchestration tokens. Cost is higher than single-agent approaches but testing is more isolated and realistic.
 
 ---
 
@@ -2037,8 +1414,8 @@ After the report is generated, clean up all browser state:
 
 1. **Close all browser tabs** opened during the test (`browser_close`)
 2. **Delete temporary files** — remove any screenshots, action logs, or intermediate JSON files created during the run (unless `--verbose` was set)
-3. **[ORCHESTRATOR] Remove temporary worktrees** — delete `/tmp/crowdtest-persona-*` worktrees and corresponding temporary branches after results are collected
-4. **[ORCHESTRATOR] Remove sub-agent artifacts** — clean `PERSONA-TASK.md`, copied snapshots, and transient logs once the final report is saved (unless `--verbose` was set)
+3. **Remove temporary worktrees** — delete `/tmp/crowdtest-persona-*` worktrees and corresponding temporary branches after results are collected
+4. **Remove sub-agent artifacts** — clean `PERSONA-TASK.md`, copied snapshots, and transient logs once the final report is saved (unless `--verbose` was set)
 5. **Summary to user** — print a one-line summary:
    ```
    ✅ CrowdTest complete — Score: X/10 | N issues found | Report: [path]
