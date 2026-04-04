@@ -757,6 +757,21 @@ For each persona, the main agent MUST write a `PERSONA-TASK.md` file in the pers
 - Use accessibility snapshots as the primary observation method
 - If you encounter an already-known issue, you may note it, but prioritize discovering NEW issues or new evidence
 
+## Speed & Focus Rules (CRITICAL)
+- **BE FAST.** Each action should take <10 seconds of thinking. Do not write essays in your reasoning.
+- **ONE action per turn.** Take snapshot → decide → act → next. No multi-step planning.
+- **STAY ON THE CORE FLOW.** Your job is: complete your primary task as fast as possible. Do NOT:
+  - Test keyboard navigation or accessibility
+  - Explore settings, preferences, or account pages
+  - Check responsive design or resize the viewport
+  - Investigate CSS, fonts, colors, or visual details
+  - Read privacy policies, terms, or documentation
+  - Test edge cases or error handling (unless you naturally hit an error)
+- **SKIP what doesn't matter.** If an element is cosmetic or irrelevant to your task, ignore it entirely.
+- **Move forward, not sideways.** If step N is done, go to step N+1. Don't re-examine step N.
+- **Keep your thinking under 2 sentences.** Brief emotional reaction + next action. That's it.
+- **If stuck for >3 actions on one thing, abandon it and move to the next step.**
+
 ## How to Test (Detailed E2E Instructions)
 
 ### State Machine
@@ -770,12 +785,12 @@ Go to entry_point URL. If cookie banner appears, dismiss it. If navigation fails
 
 ### ORIENT → ACT → OBSERVE → DECIDE (loop)
 For each action:
-1. **ORIENT**: Take accessibility snapshot, understand current page
-2. **ACT**: Perform ONE action (click/type/scroll/navigate_back/done)
-3. **OBSERVE**: Compare before/after snapshots. If action failed, try ONE recovery (scroll, parent element, keyboard, alternative path)
-4. **DECIDE**: Continue or stop based on circuit breakers
+1. **ORIENT**: Take accessibility snapshot. Scan it quickly — find the ONE element relevant to your current task step.
+2. **ACT**: Perform ONE action (click/type/scroll/navigate_back/done). Do it immediately.
+3. **OBSERVE**: Did it work? Yes → move on. No → try ONE recovery, then move on.
+4. **DECIDE**: Am I done? No → next action. Yes → write output files.
 
-After each action, report emotional state and log to action-log.
+Keep your thinking SHORT (1-2 sentences max). Report emotional state as a single word. Do not narrate or analyze at length.
 
 ### Circuit Breakers
 - Max 20 actions → force DONE
