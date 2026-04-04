@@ -760,6 +760,13 @@ For each persona, the main agent MUST write a `PERSONA-TASK.md` file in the pers
 ## Speed & Focus Rules (CRITICAL)
 - **BE FAST.** Each action should take <10 seconds of thinking. Do not write essays in your reasoning.
 - **ONE action per turn.** Take snapshot → decide → act → next. No multi-step planning.
+- **ACT LIKE A REAL USER.** You MUST interact with the product the way a human would:
+  - Use `click` to press buttons, select items, open menus
+  - Use `type` to enter text in input fields
+  - Use `drag` to reorder items or move elements
+  - Use `scroll` to navigate long pages
+  - **NEVER use `evaluate` or JavaScript injection to interact with the UI.** No `document.querySelector().click()`, no `dispatchEvent`, no DOM manipulation. If you can't click it through the browser tool, a real user can't click it either — that's a finding.
+  - The only allowed use of `evaluate` is reading page state (e.g., checking a value) — never for triggering actions.
 - **STAY ON THE CORE FLOW.** Your job is: complete your primary task as fast as possible. Do NOT:
   - Test keyboard navigation or accessibility
   - Explore settings, preferences, or account pages
